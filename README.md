@@ -70,6 +70,10 @@ Set `MAILLOG_PUBLIC_URL` to the public https URL – it is required for passkeys
 Security model of the agent: it only makes outbound HTTPS calls, the server never sends commands (only declarative check definitions),
 it restarts only units in a local allow-list (`/etc/maillog-agent.json`) and reads only log files below `allowedLogDirs`.
 
+## Postfix recipe
+
+How to rate limit a relay chain without hard bans (tested, and what the default agent roles expect): [docs/POSTFIX-RATE-LIMITING.md](docs/POSTFIX-RATE-LIMITING.md).
+
 ## Users, roles, tokens
 
 | role | can |
