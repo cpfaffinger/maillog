@@ -52,9 +52,16 @@ public static partial class Queries
             return;
         }
         p["like"] = Like(q);
+        // a Message-ID header (with or without <>) finds every queue entry that logged it
+        var byMessageId = "";
+        if (q.Contains('@') && LogParser.NormalizeMessageId(q) is { } mid)
+        {
+            p["mid"] = mid;
+            byMessageId = " OR EXISTS (SELECT 1 FROM events s WHERE s.message_id = @mid AND s.agent_id = e.agent_id AND s.queue_id = e.queue_id)";
+        }
         where.Add(me.Scoped
-            ? "(e.sender ILIKE @like OR e.recipient ILIKE @like)"
-            : "(e.sender ILIKE @like OR e.recipient ILIKE @like OR e.client_ip = @q OR e.sasl_user ILIKE @like OR e.client_host ILIKE @like)");
+            ? $"(e.sender ILIKE @like OR e.recipient ILIKE @like{byMessageId})"
+            : $"(e.sender ILIKE @like OR e.recipient ILIKE @like OR e.client_ip = @q OR e.sasl_user ILIKE @like OR e.client_host ILIKE @like{byMessageId})");
     }
 
     public static object Events(Db db, Me me, IQueryCollection qs)

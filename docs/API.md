@@ -11,6 +11,8 @@ Two ways, both resolve to the same user + role:
 * **Personal access token (PAT)**: `Authorization: Bearer mlp_...`. Created under *My account → Access tokens* or `POST /me/tokens`.
   A token can be `readOnly` (then only `GET` is allowed) and can expire. It carries the role and domain scope of its user.
 
+* **API key** (service credential for applications): `Authorization: Bearer mlk_...` or `X-Api-Key: mlk_...`. Created by an admin under *API keys* or `POST /apikeys`. A key is limited to sender domains and can only call the **message status** endpoints below; every other endpoint answers `403`.
+
 Errors: `401` not authenticated, `403` role not allowed, `404`, `400 {"error":"..."}` for validation, `429` login throttling.
 
 ## Roles (RBAC)
@@ -77,6 +79,28 @@ WebAuthn Level 3 JSON representation (`PublicKeyCredential.toJSON()` /
 | `POST /users` | `{username,displayName,role,domains[],password}` → 201 User (`domains` required and non-empty for `viewer`) |
 | `PUT /users/{id}` | `{displayName,role,domains[],disabled,password?}` → User (cannot disable/demote the last admin) |
 | `DELETE /users/{id}` | → 204 (cannot delete yourself or the last admin) |
+
+## API keys (admin)
+
+| method path | body → result |
+|---|---|
+| `GET /apikeys` | → `[{id,name,prefix,domains[],createdAt,createdBy,expiresAt,lastUsed,lastIp,useCount}]` (never the secret) |
+| `POST /apikeys` | `{name,domains[],expiresInDays?}` → 201 `{key:"mlk_...", item}`; the key is returned **once**. `domains` must be non-empty |
+| `PUT /apikeys/{id}` | `{name?,domains?}` → the item |
+| `DELETE /apikeys/{id}` | → 204 (revoked immediately) |
+
+## Message status (API key, or any signed-in user)
+
+Details, status values and client advice: [MESSAGE-STATUS.md](MESSAGE-STATUS.md).
+
+| method path | result |
+|---|---|
+| `GET /messages/status?messageId=<id>&timeline=false` | 200 status object, or 404 with `found:false, status:"not_found"` |
+| `POST /messages/status` `{messageIds[<=100],timeline?}` | 200 `{results:[status object], logsCompleteUntil}` |
+| `GET /key` | who the caller is: `{kind:"apikey"|"user", name, role, domains, expiresAt}` |
+
+An API key or a `viewer` only gets messages whose envelope sender domain is in their domains; other messages are indistinguishable from unknown ones. At most 600 requests/minute per key (`429`).
+Message ids are also searchable in `GET /events?q=` and `GET /trace?q=` (with or without `<>`).
 
 ## Mail data
 

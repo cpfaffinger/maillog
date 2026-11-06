@@ -195,4 +195,30 @@ public class LogParserTests
     {
         Assert.Equal(["customer-a.example", "customer-b.example"], UserStore.NormalizeDomains(["@Customer-A.example ", "customer-b.example", "customer-a.example", ""]));
     }
+
+    [Fact]
+    public void Cleanup_message_id_line_exposes_the_normalised_id()
+    {
+        var e = P("2026-11-06T15:07:36.543504+01:00 smtp2 postfix/cleanup[10885]: 839A6802F5: message-id=<4c8CVVvzWHHDzymMbl2kQbjAGa4A0RNoIPqZd6b7rao@danceplus.at>");
+        Assert.Equal("meta", e.Kind);
+        Assert.Equal("839A6802F5", e.QueueId);
+        Assert.Equal("4c8CVVvzWHHDzymMbl2kQbjAGa4A0RNoIPqZd6b7rao@danceplus.at", e.MessageId);
+    }
+
+    [Theory]
+    [InlineData("<abc@example.org>", "abc@example.org")]
+    [InlineData("  <abc@example.org>  ", "abc@example.org")]
+    [InlineData("abc@example.org", "abc@example.org")]
+    [InlineData("<>", null)]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void Message_ids_are_normalised(string? input, string? expected) =>
+        Assert.Equal(expected, LogParser.NormalizeMessageId(input));
+
+    [Fact]
+    public void Resent_message_id_is_not_taken_as_message_id()
+    {
+        var e = P("2026-11-06T15:07:36.543504+01:00 smtp2 postfix/cleanup[10885]: 839A6802F5: resent-message-id=<x@y.example>");
+        Assert.Null(e.MessageId);
+    }
 }

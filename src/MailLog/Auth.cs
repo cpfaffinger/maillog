@@ -13,13 +13,15 @@ public static class Roles
     public const string Admin = "admin";
     public const string Operator = "operator";
     public const string Viewer = "viewer";
+    /// <summary>Pseudo role of a service API key; never assignable to a user.</summary>
+    public const string ApiKey = "apikey";
     public static readonly string[] All = [Admin, Operator, Viewer];
 }
 
 /// <summary>The authenticated caller. Viewers are scoped to the sender domains in <see cref="Domains"/>.</summary>
 public sealed record Me(string Id, string Username, string Role, string[] Domains, bool ReadOnlyToken = false)
 {
-    public bool Scoped => Role == Roles.Viewer;
+    public bool Scoped => Role is Roles.Viewer or Roles.ApiKey;
     public bool IsAdmin => Role == Roles.Admin;
     public bool CanSeeInfrastructure => Role is Roles.Admin or Roles.Operator;
 

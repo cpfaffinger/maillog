@@ -25,6 +25,7 @@ A web UI and an OpenAPI-documented API give admins the whole picture and give cu
 * **Alerts** – offline agents, failing checks, SASL backend down (Postfix "generic failure"), rate limits, foreign sender domains, fail2ban bans, mail volume, deferral storms, stuck queue. Channels are configured in the UI: SMTP (your own server, with or without authentication, STARTTLS/SSL, password stored encrypted in the database), signal-cli-rest-api and webhooks (json/slack/discord/ntfy). Use an SMTP server that does not depend on the mail system you monitor.
 * **RBAC** – `admin`, `operator`, and `viewer` (a customer scoped to one or more sender domains: sees only mail from `@their-domain` on the final hop, no infrastructure data).
 * **Personal access tokens** (optionally read-only/expiring) and **passkeys**.
+* **Message status API** – applications look up what became of a mail by its `Message-ID` with an **API key** that is limited to sender domains (it finds nothing from other domains and can call nothing else). See [docs/MESSAGE-STATUS.md](docs/MESSAGE-STATUS.md).
 * **Retention** – mail events are deleted automatically after N days (default **180**, changeable in the UI).
 
 ## Quick start
@@ -92,6 +93,12 @@ Personal access tokens: *Account → Access tokens*, then
 
 ```bash
 curl -H "Authorization: Bearer mlp_xxx" "https://maillog.example.com/api/v1/events?q=customer-a.example&limit=50"
+```
+
+API keys for applications (admin): *API keys* in the menu, then
+
+```bash
+curl -H "Authorization: Bearer mlk_xxx" "https://maillog.example.com/api/v1/messages/status?messageId=%3Cabc%40customer-a.example%3E"
 ```
 
 The OpenAPI document is at `/openapi/v1.json`, interactive docs at `/api/docs`. Endpoint reference: [docs/API.md](docs/API.md).

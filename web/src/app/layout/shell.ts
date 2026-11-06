@@ -39,6 +39,7 @@ const NAV: NavItem[] = [
   { path: '/alerts', label: 'Alerts', icon: 'notifications', roles: STAFF },
   { path: '/agents', label: 'Agents', icon: 'dns', roles: STAFF },
   { path: '/users', label: 'Users', icon: 'group', roles: ['admin'] },
+  { path: '/api-keys', label: 'API keys', icon: 'vpn_key', roles: ['admin'] },
   { path: '/settings', label: 'Settings', icon: 'settings', roles: ['admin'] },
 ];
 

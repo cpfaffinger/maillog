@@ -100,8 +100,20 @@ public sealed class Db
             try
             {
                 using var c = Open();
+                using var has = Cmd(c, "SELECT count(*) FROM information_schema.columns WHERE table_name='events' AND column_name='message_id'");
+                var columnExisted = Convert.ToInt64(has.ExecuteScalar()) > 0;
+                var tableExists = Convert.ToInt64(Cmd(c, "SELECT count(*) FROM information_schema.tables WHERE table_name='events'").ExecuteScalar()) > 0;
                 using var cmd = Cmd(c, Schema);
                 cmd.ExecuteNonQuery();
+                if (tableExists && !columnExisted)
+                {
+                    // existing installation: derive the message id of already stored "cleanup ... message-id=<..>" lines once
+                    using var fill = Cmd(c, @"UPDATE events SET message_id = NULLIF(btrim(btrim(substring(detail from '^message-id=(.*)$')), '<>'), '')
+                                              WHERE kind='meta' AND detail LIKE 'message-id=%' AND message_id IS NULL");
+                    fill.CommandTimeout = 600;
+                    var n = fill.ExecuteNonQuery();
+                    log.LogInformation("Added events.message_id, filled {Count} existing rows", n);
+                }
                 break;
             }
             catch (Exception e) when (attempt < 30 && e is NpgsqlException or System.Net.Sockets.SocketException or TimeoutException)
@@ -213,8 +225,26 @@ public sealed class Db
         CREATE INDEX IF NOT EXISTS ix_events_next ON events(next_queue_id) WHERE next_queue_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS ix_events_ip ON events(client_ip) WHERE client_ip IS NOT NULL;
         CREATE INDEX IF NOT EXISTS ix_events_sdomain ON events((lower(split_part(sender, '@', 2))), ts);
+        ALTER TABLE events ADD COLUMN IF NOT EXISTS message_id TEXT;
+        CREATE INDEX IF NOT EXISTS ix_events_msgid ON events(message_id) WHERE message_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS ix_events_sender_trgm ON events USING gin (sender gin_trgm_ops);
         CREATE INDEX IF NOT EXISTS ix_events_recipient_trgm ON events USING gin (recipient gin_trgm_ops);
+
+        -- Service keys for integrations (e.g. a customer application asking for the status of a message). Not tied to a user; limited to sender domains.
+        CREATE TABLE IF NOT EXISTS api_keys(
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          key_hash TEXT NOT NULL UNIQUE,
+          prefix TEXT NOT NULL,
+          domains TEXT[] NOT NULL,
+          created_by TEXT,
+          created_at BIGINT NOT NULL,
+          expires_at BIGINT,
+          last_used BIGINT,
+          last_ip TEXT,
+          use_count BIGINT NOT NULL DEFAULT 0,
+          revoked BOOLEAN NOT NULL DEFAULT FALSE
+        );
 
         CREATE TABLE IF NOT EXISTS health(
           agent_id TEXT NOT NULL,

@@ -49,8 +49,8 @@ function saveRecent(list: string[]): void {
       <form class="card search" (submit)="$event.preventDefault(); go()" role="search">
         <div class="field">
           <mat-icon aria-hidden="true">search</mat-icon>
-          <input class="big" type="search" [formControl]="query" placeholder="Queue ID or e-mail address" autocomplete="off"
-                 aria-label="Queue ID or e-mail address" aria-describedby="trace-help" enterkeyhint="search" />
+          <input class="big" type="search" [formControl]="query" placeholder="Queue ID, e-mail address or Message-ID" autocomplete="off"
+                 aria-label="Queue ID, e-mail address or Message-ID" aria-describedby="trace-help" enterkeyhint="search" />
           <button mat-flat-button type="submit" [disabled]="loading() || !query.value.trim()">Trace</button>
         </div>
         <p id="trace-help" class="muted help">
@@ -78,6 +78,7 @@ function saveRecent(list: string[]): void {
           <ul class="tips">
             <li><b>Queue ID</b> – for example <span class="mono">9C2197F869</span>, shown in the Messages list.</li>
             <li><b>Address</b> – a full sender or recipient address, or part of it such as <span class="mono">&#64;example.com</span>.</li>
+            <li><b>Message-ID</b> – the <span class="mono">Message-ID</span> header of the mail, for example <span class="mono">&lt;abc123&#64;example.com&gt;</span>.</li>
             <li>Tip: open an event in <b>Messages</b> and choose <i>Trace this message</i>.</li>
           </ul>
         </section>

@@ -68,6 +68,12 @@ export const routes: Routes = [
         loadComponent: () => import('./features/users/users').then((m) => m.Users),
       },
       {
+        path: 'api-keys',
+        canActivate: [admin],
+        title: 'API keys · maillog',
+        loadComponent: () => import('./features/apikeys/apikeys').then((m) => m.ApiKeys),
+      },
+      {
         path: 'account',
         title: 'Account · maillog',
         loadComponent: () => import('./features/account/account').then((m) => m.Account),

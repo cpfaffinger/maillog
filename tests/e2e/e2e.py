@@ -13,6 +13,7 @@ import secrets
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 BASE = sys.argv[1].rstrip("/")
@@ -204,7 +205,11 @@ def main():
     # sanity: queue ids must be 10-16 chars
     q1, q2, q3 = [(q + "0000000000")[:10] for q in (q1, q2, q3)]
     host = "smtp2"
+    mid1 = "e2e-1-%s@%s" % (SUFFIX, dom)
+    mid2 = "e2e-2-%s@%s" % (SUFFIX, other)
     lines = [
+        iso(now - 21) + " " + host + " postfix/cleanup[1]: " + q1 + ": message-id=<" + mid1 + ">",
+        iso(now - 20) + " " + host + " postfix/cleanup[1]: " + q3 + ": message-id=<" + mid2 + ">",
         iso(now - 20) + " " + host + " postfix/smtpd[1]: " + q1 + ": client=srv-x.example[10.1.1.1], sasl_method=LOGIN, sasl_username=smtp_relay_e2e",
         iso(now - 19) + " " + host + " postfix/qmgr[2]: " + q1 + ": from=<noreply@" + dom + ">, size=1234, nrcpt=1 (queue active)",
         iso(now - 18) + " " + host + " postfix/smtp[3]: " + q1 + ": to=<user@gmail.com>, relay=10.0.0.72[10.0.0.72]:25, delay=0.2, delays=0.02/0.01/0.02/0.15, dsn=2.0.0, status=sent (250 2.0.0 Ok: queued as " + q2 + ")",
@@ -228,6 +233,8 @@ def main():
     out = Session(e2["agentToken"])
     o = "mailout"
     out_lines = [
+        iso(now - 14.5) + " " + o + " postfix/cleanup[1]: " + q2 + ": message-id=<" + mid1 + ">",
+        iso(now - 14.4) + " " + o + " postfix/cleanup[1]: " + q3 + ": message-id=<" + mid2 + ">",
         iso(now - 14) + " " + o + " postfix/smtpd[1]: " + q2 + ": client=unknown[10.0.0.74]",
         iso(now - 13) + " " + o + " postfix/qmgr[2]: " + q2 + ": from=<noreply@" + dom + ">, size=1300, nrcpt=1 (queue active)",
         iso(now - 12) + " " + o + " opendkim[3]: " + q2 + ": DKIM-Signature field added (s=x, d=" + dom + ")",
@@ -372,6 +379,183 @@ def main():
     check("revoke PAT", st == 204, st)
     st, _ = pat.call("GET", "/api/v1/me")
     check("revoked PAT rejected", st == 401, st)
+
+    # ---- API keys + message status lookup ------------------------------------------------------------------
+    def qid(n):
+        return "E2E%s%d" % (SUFFIX.upper(), n)
+
+    st, bad = admin.call("POST", "/api/v1/apikeys", {"name": "no domains", "domains": []})
+    check("api key needs at least one domain", st == 400, (st, bad))
+    st, bad = admin.call("POST", "/api/v1/apikeys", {"name": "bad", "domains": ["not a domain!"]})
+    check("api key rejects an invalid domain", st == 400, (st, bad))
+    st, bad = viewer.call("POST", "/api/v1/apikeys", {"name": "evil", "domains": [dom]})
+    check("viewer cannot create api keys", st == 403, st)
+    st, bad = op.call("POST", "/api/v1/apikeys", {"name": "evil", "domains": [dom]})
+    check("operator cannot create api keys", st == 403, st)
+    st, bad = op.call("GET", "/api/v1/apikeys")
+    check("operator cannot list api keys", st == 403, st)
+
+    st, k1 = admin.call("POST", "/api/v1/apikeys", {"name": "danceplus " + SUFFIX, "domains": ["@" + dom.upper()], "expiresInDays": 30})
+    check("create api key (domain normalised, secret returned once)", st == 201 and k1["key"].startswith("mlk_") and k1["item"]["domains"] == [dom] and k1["item"]["expiresAt"], (st, k1))
+    st, k2 = admin.call("POST", "/api/v1/apikeys", {"name": "other " + SUFFIX, "domains": [other]})
+    st, k3 = admin.call("POST", "/api/v1/apikeys", {"name": "both " + SUFFIX, "domains": [dom, other]})
+    st, kl = admin.call("GET", "/api/v1/apikeys")
+    check("api key list hides the secret", st == 200 and len(kl) >= 3 and all("key" not in k and "keyHash" not in k for k in kl) and all(k1["key"] not in json.dumps(k) for k in kl), kl[:1])
+    K1, K2, K3 = Session(k1["key"]), Session(k2["key"]), Session(k3["key"])
+    KX = Session()
+    hdr = {"X-Api-Key": k1["key"]}
+
+    st, who = K1.call("GET", "/api/v1/key")
+    check("api key whoami lists its domains", st == 200 and who["kind"] == "apikey" and who["domains"] == [dom], (st, who))
+    st, who = KX.call("GET", "/api/v1/key", headers=hdr)
+    check("api key accepted in the X-Api-Key header", st == 200 and who["kind"] == "apikey", (st, who))
+    st, _ = Session("mlk_" + "x" * 40).call("GET", "/api/v1/key")
+    check("invalid api key rejected", st == 401, st)
+    st, _ = Session().call("GET", "/api/v1/messages/status?messageId=" + mid1)
+    check("status lookup requires credentials", st == 401, st)
+
+    # an API key is a service credential: it must not open anything else
+    for path in ("/api/v1/me", "/api/v1/events", "/api/v1/trace?q=" + q2, "/api/v1/stats/summary", "/api/v1/overview", "/api/v1/queue",
+                 "/api/v1/alerts", "/api/v1/agents", "/api/v1/users", "/api/v1/apikeys", "/api/v1/settings", "/api/v1/settings/channels",
+                 "/api/v1/me/tokens"):
+        st, _ = K1.call("GET", path)
+        check("api key forbidden: " + path, st == 403, st)
+    st, _ = K1.call("POST", "/api/v1/apikeys", {"name": "escalate", "domains": [dom]})
+    check("api key cannot create api keys", st == 403, st)
+    st, _ = K1.call("POST", "/api/v1/agents", {"name": "evil3", "role": "relay"})
+    check("api key cannot create agents", st == 403, st)
+
+    # delivered message through both hops
+    st, r = K1.call("GET", "/api/v1/messages/status?messageId=" + urllib.parse.quote("<" + mid1 + ">") + "&timeline=true")
+    check("lookup: delivered (with angle brackets)", st == 200 and r["found"] and r["status"] == "delivered" and r["final"] is True, (st, r))
+    if st == 200:
+        rc = r["recipients"][0]
+        check("lookup: recipient detail from the final hop", len(r["recipients"]) == 1 and rc["address"] == "user@gmail.com" and rc["status"] == "delivered"
+              and rc["dsn"] == "2.0.0" and "gmail-smtp-in" in rc["remoteServer"] and rc["deliveredAt"] and rc["attempts"] == 1, rc)
+        check("lookup: sender and timing", r["sender"] == "noreply@" + dom and r["receivedAt"] and r["deliveredAt"] and r["totalDelaySeconds"] is not None and r["totalDelaySeconds"] >= 0, r)
+        check("lookup: summary text", "Delivered" in r["summary"] and "user@gmail.com" in r["summary"], r["summary"])
+        check("lookup: timeline uses hop numbers and hides the hand-over", r["timeline"] and {t["hop"] for t in r["timeline"]} == {1, 2}
+              and any(t["detail"] == "Handed over to the next mail server" for t in r["timeline"]), r["timeline"])
+        dumped = json.dumps(r)
+        check("lookup leaks no infrastructure", not any(x in dumped for x in (name, out_name, "10.0.0.72", "10.1.1", "smtp_relay", "srv-x", "mailout", "smtp2", "10.0.0.74")), dumped[:600])
+    st, r2 = K1.call("GET", "/api/v1/messages/status?messageId=" + mid1)
+    check("lookup: bare id without brackets, no timeline unless asked", st == 200 and r2["status"] == "delivered" and r2["timeline"] is None, (st, r2.get("timeline")))
+    st, r3 = KX.call("GET", "/api/v1/messages/status?messageId=" + mid1, headers=hdr)
+    check("lookup works with X-Api-Key", st == 200 and r3["status"] == "delivered", st)
+
+    # domain restriction: another domain's message is indistinguishable from an unknown one
+    st, foreign = K1.call("GET", "/api/v1/messages/status?messageId=" + mid2)
+    st2, unknown = K1.call("GET", "/api/v1/messages/status?messageId=does-not-exist-%s@%s" % (SUFFIX, dom))
+    strip = lambda d: {k: v for k, v in d.items() if k != "messageId"}
+    check("domain mismatch looks exactly like an unknown message", st == 404 and st2 == 404 and strip(foreign) == strip(unknown) and foreign["status"] == "not_found" and foreign["found"] is False, (st, foreign, st2, unknown))
+    check("not_found tells how far the logs are complete", foreign["logsCompleteUntil"], foreign)
+    st, f2 = K2.call("GET", "/api/v1/messages/status?messageId=" + mid2)
+    check("key of the other domain sees it (deferred, retrying)", st == 200 and f2["status"] == "deferred" and f2["final"] is False and f2["recipients"][0]["status"] == "deferred", (st, f2))
+    st, f2b = K2.call("GET", "/api/v1/messages/status?messageId=" + mid1)
+    check("key of the other domain cannot see the first message", st == 404, (st, f2b))
+    st, f3 = K3.call("GET", "/api/v1/messages/status?messageId=" + mid2)
+    st2, f3b = K3.call("GET", "/api/v1/messages/status?messageId=" + mid1)
+    check("key with both domains sees both", st == 200 and st2 == 200, (st, st2))
+    st, vr = viewer.call("GET", "/api/v1/messages/status?messageId=" + mid1)
+    st2, vr2 = viewer.call("GET", "/api/v1/messages/status?messageId=" + mid2)
+    check("a viewer user gets the same restriction", st == 200 and vr["status"] == "delivered" and st2 == 404, (st, st2))
+    st, ar = admin.call("GET", "/api/v1/messages/status?messageId=" + mid2)
+    check("admin session may look up any domain", st == 200 and ar["status"] == "deferred", (st, ar))
+
+    # more scenarios, all from the dp domain: partial, in transit, queued only, expired, bounced, announced-but-missing recipient
+    cases = [(i, "e2e-c%d-%s@%s" % (i, SUFFIX, dom)) for i in range(3, 10)]
+    smtp2_extra, out_extra = [], []
+
+    def hop1(i, mid, nrcpt, rcpts, next_q):
+        smtp2_extra.append(iso(now - 6) + " smtp2 postfix/cleanup[1]: %s: message-id=<%s>" % (qid(i), mid))
+        smtp2_extra.append(iso(now - 5.9) + " smtp2 postfix/qmgr[2]: %s: from=<noreply@%s>, size=1234, nrcpt=%d (queue active)" % (qid(i), dom, nrcpt))
+        for r_ in rcpts:
+            smtp2_extra.append(iso(now - 5.8) + " smtp2 postfix/smtp[3]: %s: to=<%s>, relay=10.0.0.72[10.0.0.72]:25, delay=0.2, delays=0.02/0.01/0.02/0.15, dsn=2.0.0, status=sent (250 2.0.0 Ok: queued as %s)" % (qid(i), r_, next_q))
+
+    def hop2(i, mid, nrcpt, delivery_lines):
+        out_extra.append(iso(now - 5.7) + " mailout postfix/cleanup[1]: %s: message-id=<%s>" % (qid(i + 20), mid))
+        out_extra.append(iso(now - 5.6) + " mailout postfix/qmgr[2]: %s: from=<noreply@%s>, size=1300, nrcpt=%d (queue active)" % (qid(i + 20), dom, nrcpt))
+        out_extra.extend(delivery_lines)
+
+    def dl(i, rcpt, status, dsn, text, t=-5.5):
+        return iso(now + t) + " mailout postfix/smtp[4]: %s: to=<%s>, relay=mx.example.net[198.51.100.7]:25, delay=1.1, delays=0.1/0.01/0.3/0.7, dsn=%s, status=%s (%s)" % (qid(i + 20), rcpt, dsn, status, text)
+
+    c3, c4, c5, c6, c7, c8, c9 = [m for _, m in cases]
+    hop1(3, c3, 2, ["a@ok.example", "b@bad.example"], qid(23))
+    hop2(3, c3, 2, [dl(3, "a@ok.example", "sent", "2.0.0", "250 OK"), dl(3, "b@bad.example", "bounced", "5.1.1", "550 5.1.1 user unknown")])
+    hop1(4, c4, 1, ["c@ok.example"], qid(24))                                      # handed over, mailout has not logged anything yet
+    smtp2_extra.append(iso(now - 6) + " smtp2 postfix/cleanup[1]: %s: message-id=<%s>" % (qid(5), c5))          # accepted, nothing else yet
+    smtp2_extra.append(iso(now - 5.9) + " smtp2 postfix/qmgr[2]: %s: from=<noreply@%s>, size=1234, nrcpt=1 (queue active)" % (qid(5), dom))
+    hop1(6, c6, 1, ["d@slow.example"], qid(26))
+    hop2(6, c6, 1, [dl(6, "d@slow.example", "deferred", "4.4.1", "connect to slow.example: Connection timed out", -5.5),
+                    iso(now - 5.4) + " mailout postfix/qmgr[2]: %s: from=<noreply@%s>, status=expired, returned to sender" % (qid(26), dom)])
+    hop1(7, c7, 1, ["e@gone.example"], qid(27))
+    hop2(7, c7, 1, [dl(7, "e@gone.example", "bounced", "5.1.1", "550 5.1.1 no such user")])
+    hop1(8, c8, 2, ["f@ok.example", "g@ok.example"], qid(28))
+    hop2(8, c8, 2, [dl(8, "f@ok.example", "sent", "2.0.0", "250 OK")])             # second recipient not logged yet
+    hop1(9, c9, 1, ["h@retry.example"], qid(29))
+    hop2(9, c9, 1, [dl(9, "h@retry.example", "deferred", "4.2.2", "452 mailbox full", -5.5),
+                    dl(9, "h@retry.example", "sent", "2.0.0", "250 OK", -5.0)])    # retry succeeded
+    st, r = agent.call("POST", "/agent-api/v1/ingest", {"tzOffsetMinutes": 60, "batches": [{"source": "mail", "lines": smtp2_extra}]})
+    check("ingest status scenarios (relay hop)", st == 200 and r["accepted"] == len(smtp2_extra), (st, r))
+    st, r = out.call("POST", "/agent-api/v1/ingest", {"tzOffsetMinutes": 60, "batches": [{"source": "mail", "lines": out_extra}]})
+    check("ingest status scenarios (outbound hop)", st == 200 and r["accepted"] == len(out_extra), (st, r))
+
+    def status_of(mid):
+        return K1.call("GET", "/api/v1/messages/status?messageId=" + mid)[1]
+
+    r = status_of(c3)
+    check("scenario: some recipients delivered, one bounced = partial", r["status"] == "partial" and r["final"] is True and sorted(x["status"] for x in r["recipients"]) == ["bounced", "delivered"], r)
+    r = status_of(c4)
+    check("scenario: handed to the outbound server only = in_transit", r["status"] == "in_transit" and r["final"] is False and r["recipients"][0]["status"] == "in_transit" and r["recipients"][0]["remoteServer"] is None, r)
+    r = status_of(c5)
+    check("scenario: accepted, no delivery yet = queued", r["status"] == "queued" and r["final"] is False and r["recipientCount"] == 1 and r["recipients"] == [], r)
+    r = status_of(c6)
+    check("scenario: deferred then expired = expired", r["status"] == "expired" and r["final"] is True, r)
+    r = status_of(c7)
+    check("scenario: permanent failure = bounced with the remote reason", r["status"] == "bounced" and "no such user" in json.dumps(r["recipients"]) and r["recipients"][0]["dsn"] == "5.1.1", r)
+    r = status_of(c8)
+    check("scenario: announced recipient not seen yet keeps the message pending", r["status"] != "delivered" and r["final"] is False and r["recipientCount"] == 2, r)
+    r = status_of(c9)
+    check("scenario: retry succeeded = delivered with 2 attempts", r["status"] == "delivered" and r["recipients"][0]["attempts"] == 2, r)
+
+    # batch
+    st, b = K1.call("POST", "/api/v1/messages/status", {"messageIds": [mid1, "<" + mid2 + ">", c3, "unknown-%s@%s" % (SUFFIX, dom), mid1]})
+    check("batch: one result per distinct id, domain filtered", st == 200 and [x["found"] for x in b["results"]] == [True, False, True, False] and b["logsCompleteUntil"], (st, b))
+    st, b = K1.call("POST", "/api/v1/messages/status", {"messageIds": []})
+    check("batch: empty list rejected", st == 400, st)
+    st, b = K1.call("POST", "/api/v1/messages/status", {"messageIds": ["x%d@%s" % (i, dom) for i in range(101)]})
+    check("batch: more than 100 ids rejected", st == 400, st)
+    st, b = K1.call("POST", "/api/v1/messages/status", {"messageIds": [mid1], "timeline": True})
+    check("batch: timeline on request", st == 200 and b["results"][0]["timeline"], (st, b))
+
+    # the same id is findable in the admin UI search and trace
+    st, ev = admin.call("GET", "/api/v1/events?all=true&q=" + urllib.parse.quote("<" + mid1 + ">"))
+    check("events search by Message-ID finds the queue entries of both hops", st == 200 and {i["agentName"] for i in ev["items"]} == {name, out_name}, (st, {i["agentName"] for i in ev["items"]} if st == 200 else ev))
+    st, tr = admin.call("GET", "/api/v1/trace?q=" + urllib.parse.quote(mid1))
+    check("trace by Message-ID (bare) crosses both hops", st == 200 and {e["agentName"] for e in tr["events"]} == {name, out_name}, (st, tr))
+    st, vev = viewer.call("GET", "/api/v1/events?q=" + urllib.parse.quote(mid2))
+    check("viewer cannot find another domain's message by Message-ID", st == 200 and vev["items"] == [], vev)
+
+    # rate limit per key, then update and revoke
+    st, k4 = admin.call("POST", "/api/v1/apikeys", {"name": "limit " + SUFFIX, "domains": [dom]})
+    K4 = Session(k4["key"])
+    codes = [K4.call("GET", "/api/v1/messages/status?messageId=none-%d@%s" % (i, dom))[0] for i in range(620)]
+    check("per-key rate limit answers 429 after 600 requests per minute", codes[:600].count(404) >= 590 and 429 in codes[600:], (codes.count(404), codes.count(429)))
+    st, up = admin.call("PUT", "/api/v1/apikeys/" + k1["item"]["id"], {"name": "renamed " + SUFFIX, "domains": [dom, "extra-%s.e2e.test" % SUFFIX]})
+    check("update api key name and domains", st == 200 and up["name"] == "renamed " + SUFFIX and len(up["domains"]) == 2, (st, up))
+    st, up = admin.call("PUT", "/api/v1/apikeys/" + k1["item"]["id"], {"domains": []})
+    check("update cannot remove all domains", st == 400, (st, up))
+    st, kl = admin.call("GET", "/api/v1/apikeys")
+    mine_k = next((k for k in kl if k["id"] == k1["item"]["id"]), None)
+    check("usage is recorded per key", mine_k and mine_k["useCount"] >= 10 and mine_k["lastUsed"], mine_k)
+    for k in (k1, k2, k3, k4):
+        st, _ = admin.call("DELETE", "/api/v1/apikeys/" + k["item"]["id"])
+    check("revoke api key", st == 204, st)
+    st, _ = K1.call("GET", "/api/v1/messages/status?messageId=" + mid1)
+    check("revoked api key rejected", st == 401, st)
+    st, _ = admin.call("DELETE", "/api/v1/apikeys/" + k1["item"]["id"])
+    check("revoking twice is a 404", st == 404, st)
 
     # ---- user admin guards -------------------------------------------------------------------------------
     st, users = admin.call("GET", "/api/v1/users")

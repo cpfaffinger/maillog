@@ -7,7 +7,7 @@ public sealed record ParsedEvent(
     long Ts, string Source, string? Program, int? Pid, string? QueueId, string Kind,
     string? Sender, string? Recipient, string? ClientIp, string? ClientHost, string? SaslUser,
     string? Relay, string? Status, string? Dsn, string? NextQueueId, double? DelayS,
-    string? Detail, string Raw);
+    string? Detail, string Raw, string? MessageId = null);
 
 /// <summary>
 /// Turns raw syslog lines (Postfix, OpenDKIM, saslauthd) and fail2ban log lines into structured events.
@@ -138,8 +138,8 @@ public static partial class LogParser
     {
         ParsedEvent E(string kind, string? qid = null, string? sender = null, string? rcpt = null, string? cip = null,
             string? chost = null, string? sasl = null, string? relay = null, string? status = null, string? dsn = null,
-            string? next = null, double? delay = null, string? detail = null) =>
-            new(ts, source, prog, pid, qid, kind, sender, rcpt, cip, Host(chost), sasl, relay, status, dsn, next, delay, Trunc(detail), raw);
+            string? next = null, double? delay = null, string? detail = null, string? mid = null) =>
+            new(ts, source, prog, pid, qid, kind, sender, rcpt, cip, Host(chost), sasl, relay, status, dsn, next, delay, Trunc(detail), raw, mid);
 
         var q = QidLine().Match(msg);
         if (q.Success)
@@ -174,7 +174,9 @@ public static partial class LogParser
                 return E("reject", qid, sender: fm.Success ? fm.Groups["from"].Value : null,
                     rcpt: tm.Success ? tm.Groups["to"].Value : null, detail: rest);
             }
-            if (rest.StartsWith("message-id=", StringComparison.Ordinal) || rest.StartsWith("removed", StringComparison.Ordinal)
+            if (rest.StartsWith("message-id=", StringComparison.Ordinal))
+                return E("meta", qid, detail: rest, mid: NormalizeMessageId(rest["message-id=".Length..]));
+            if (rest.StartsWith("removed", StringComparison.Ordinal)
                 || rest.StartsWith("warning: header", StringComparison.Ordinal) || rest.StartsWith("resent-message-id=", StringComparison.Ordinal))
                 return E("meta", qid, detail: rest);
             return E("info", qid, detail: rest);
@@ -270,6 +272,15 @@ public static partial class LogParser
 
     private static ParsedEvent Generic(long ts, string source, string kind, string raw) =>
         new(ts, source, null, null, null, kind, null, null, null, null, null, null, null, null, null, null, Trunc(raw), raw);
+
+    /// <summary>"&lt;abc@example.org&gt;" and "abc@example.org" both become "abc@example.org"; null when nothing usable is left.</summary>
+    public static string? NormalizeMessageId(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return null;
+        var v = id.Trim();
+        if (v.StartsWith('<') && v.EndsWith('>')) v = v[1..^1].Trim();
+        return v.Length is 0 or > 998 || v.Any(char.IsControl) ? null : v;
+    }
 
     private static string? Host(string? h) =>
         string.IsNullOrEmpty(h) || h == "unknown" ? null : h;

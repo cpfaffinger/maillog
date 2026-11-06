@@ -19,6 +19,9 @@ builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<PasskeyService>();
 builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddSingleton<ChannelStore>();
+builder.Services.AddSingleton<ApiKeyStore>();
+builder.Services.AddSingleton<KeyRateLimiter>();
+builder.Services.AddSingleton<MessageStatusService>();
 builder.Services.AddSingleton<Notifier>();
 builder.Services.AddSingleton<PgXmlRepository>();
 builder.Services.AddHostedService<AlertService>();
@@ -36,9 +39,9 @@ builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(sp =>
 builder.Services.AddAuthentication("Smart")
     .AddPolicyScheme("Smart", "Cookie or personal access token", o =>
         o.ForwardDefaultSelector = ctx =>
-            ctx.Request.Headers.Authorization.ToString().StartsWith("Bearer mlp_", StringComparison.Ordinal)
-                ? PatAuthHandler.SchemeName
-                : CookieAuthenticationDefaults.AuthenticationScheme)
+            ctx.Request.Headers.Authorization.ToString().StartsWith("Bearer mlp_", StringComparison.Ordinal) ? PatAuthHandler.SchemeName
+            : ApiKeyAuthHandler.Presented(ctx.Request) is not null ? ApiKeyAuthHandler.SchemeName
+            : CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, o =>
     {
         o.Cookie.Name = "maillog.auth";
@@ -51,9 +54,14 @@ builder.Services.AddAuthentication("Smart")
         o.Events.OnRedirectToAccessDenied = c => { c.Response.StatusCode = 403; return Task.CompletedTask; };
         o.Events.OnValidatePrincipal = CookieRevalidation.Validate;
     })
-    .AddScheme<AuthenticationSchemeOptions, PatAuthHandler>(PatAuthHandler.SchemeName, _ => { });
+    .AddScheme<AuthenticationSchemeOptions, PatAuthHandler>(PatAuthHandler.SchemeName, _ => { })
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthHandler>(ApiKeyAuthHandler.SchemeName, _ => { });
 
 builder.Services.AddAuthorizationBuilder()
+    // API keys are service credentials for the message status lookup only: every endpoint that uses the default policy refuses them
+    .SetDefaultPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser()
+        .RequireAssertion(c => !c.User.IsInRole(Roles.ApiKey)).Build())
+    .AddPolicy("lookup", p => p.RequireAuthenticatedUser())
     .AddPolicy("operator", p => p.RequireRole(Roles.Admin, Roles.Operator))
     .AddPolicy("admin", p => p.RequireRole(Roles.Admin))
     .SetFallbackPolicy(null);
@@ -62,7 +70,7 @@ builder.Services.AddOpenApi(o => o.AddDocumentTransformer((doc, _, _) =>
 {
     doc.Info.Title = "maillog API";
     doc.Info.Version = "v1";
-    doc.Info.Description = "Central mail log and health monitor. Authenticate with a session cookie or a personal access token: `Authorization: Bearer mlp_...`.";
+    doc.Info.Description = "Central mail log and health monitor. Authenticate with a session cookie or a personal access token (`Authorization: Bearer mlp_...`). Integrations use an API key (`Authorization: Bearer mlk_...` or `X-Api-Key: mlk_...`) to look up the delivery status of a message by its Message-ID; an API key is limited to sender domains and cannot call any other endpoint.";
     return Task.CompletedTask;
 }));
 
@@ -134,6 +142,8 @@ app.MapGet("/api/v1/version", () =>
 UserApi.Map(app);
 DataApi.Map(app);
 StatsApi.Map(app);
+ApiKeyApi.Map(app);
+MessageStatusApi.Map(app);
 AgentApi.Map(app);
 
 app.MapOpenApi();

@@ -136,9 +136,9 @@ public sealed class Store(Db db, Settings settings)
     {
         const string sql = """
             INSERT INTO events(agent_id, ts, source, program, pid, queue_id, kind, sender, recipient, client_ip, client_host,
-                               sasl_user, relay, status, dsn, next_queue_id, delay_s, detail, raw, line_hash)
+                               sasl_user, relay, status, dsn, next_queue_id, delay_s, detail, raw, line_hash, message_id)
             VALUES(@agent_id, @ts, @source, @program, @pid, @queue_id, @kind, @sender, @recipient, @client_ip, @client_host,
-                   @sasl_user, @relay, @status, @dsn, @next_queue_id, @delay_s, @detail, @raw, @line_hash)
+                   @sasl_user, @relay, @status, @dsn, @next_queue_id, @delay_s, @detail, @raw, @line_hash, @message_id)
             ON CONFLICT (agent_id, line_hash) DO NOTHING
             """;
         var now = DateTimeOffset.UtcNow;
@@ -157,6 +157,7 @@ public sealed class Store(Db db, Settings settings)
         var pDsn = P("dsn", NpgsqlDbType.Text); var pNext = P("next_queue_id", NpgsqlDbType.Text);
         var pDelay = P("delay_s", NpgsqlDbType.Double); var pDetail = P("detail", NpgsqlDbType.Text);
         var pRaw = P("raw", NpgsqlDbType.Text); var pHash = P("line_hash", NpgsqlDbType.Text);
+        var pMid = P("message_id", NpgsqlDbType.Text);
         pAgent.Value = agentId;
 
         foreach (var batch in batches)
@@ -177,7 +178,7 @@ public sealed class Store(Db db, Settings settings)
                 pRelay.Value = (object?)e.Relay ?? DBNull.Value; pStatus.Value = (object?)e.Status ?? DBNull.Value;
                 pDsn.Value = (object?)e.Dsn ?? DBNull.Value; pNext.Value = (object?)e.NextQueueId ?? DBNull.Value;
                 pDelay.Value = (object?)e.DelayS ?? DBNull.Value; pDetail.Value = (object?)e.Detail ?? DBNull.Value;
-                pRaw.Value = e.Raw;
+                pRaw.Value = e.Raw; pMid.Value = (object?)e.MessageId ?? DBNull.Value;
                 pHash.Value = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source + "\n" + e.Raw)))[..32];
                 var n = cmd.ExecuteNonQuery();
                 inserted += n;

@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { SILENT } from '../core/http';
 import {
-  AccessToken, ActionItem, Agent, AgentConfigInput, AgentCreated, Alert, AppSettings, ChannelKey, Channels,
+  AccessToken, ActionItem, Agent, ApiKey, ApiKeyCreated, ApiKeyInput, AgentConfigInput, AgentCreated, Alert, AppSettings, ChannelKey, Channels,
   ChannelsInput, ChannelTestBody, Enrollment,
   EventQuery, EventsPage, HealthHistoryItem, Overview, Passkey, QueueResult, StatsResult, StatsSummary,
   TestNotificationResult, TokenCreated, TraceResult, User, UserInput, VersionInfo, WebAuthnRequest,
@@ -99,6 +99,20 @@ export class ApiService {
   }
   userDelete(id: string) {
     return this.del(`/users/${encodeURIComponent(id)}`);
+  }
+
+  // api keys (admin)
+  apiKeys() {
+    return this.get<ApiKey[]>('/apikeys');
+  }
+  apiKeyCreate(input: ApiKeyInput) {
+    return this.post<ApiKeyCreated>('/apikeys', input);
+  }
+  apiKeyUpdate(id: string, input: Pick<ApiKeyInput, 'name' | 'domains'>) {
+    return this.put<ApiKey>(`/apikeys/${encodeURIComponent(id)}`, input);
+  }
+  apiKeyDelete(id: string) {
+    return this.del(`/apikeys/${encodeURIComponent(id)}`);
   }
 
   // data

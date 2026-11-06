@@ -271,6 +271,30 @@ export interface TokenCreated {
   item: AccessToken;
 }
 
+export interface ApiKey {
+  id: string;
+  name: string;
+  prefix: string;
+  domains: string[];
+  createdAt: number;
+  createdBy: string | null;
+  expiresAt: number | null;
+  lastUsed: number | null;
+  lastIp: string | null;
+  useCount: number;
+}
+
+export interface ApiKeyInput {
+  name: string;
+  domains: string[];
+  expiresInDays?: number;
+}
+
+export interface ApiKeyCreated {
+  key: string;
+  item: ApiKey;
+}
+
 export interface WebAuthnRequest {
   requestId: string;
   options: Record<string, unknown>;
