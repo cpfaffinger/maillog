@@ -14,12 +14,13 @@ import { AuthService } from '../../core/auth.service';
 import { errorMessage } from '../../core/http';
 import { VersionService } from '../../core/version.service';
 import { getAssertion, isCancelled, passkeysSupported } from '../../core/webauthn';
+import { ProgressNote } from '../../shared/progress-note';
 
 @Component({
   selector: 'app-login',
   imports: [
     ReactiveFormsModule, MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule,
-    MatProgressBarModule, MatDividerModule,
+    MatProgressBarModule, MatDividerModule, ProgressNote,
   ],
   template: `
     <div class="wrap">
@@ -51,7 +52,8 @@ import { getAssertion, isCancelled, passkeysSupported } from '../../core/webauth
         } @else {
           <p class="muted small">Passkeys are not available in this browser or on this connection (HTTPS required).</p>
         }
-        @if (busy()) { <mat-progress-bar mode="indeterminate" /> }
+        @if (step(); as s) { <app-progress-note [text]="s" /> }
+        @else if (busy()) { <mat-progress-bar mode="indeterminate" /> }
       </form>
       @if (version.text()) { <p class="ver muted">{{ version.text() }}</p> }
       </div>
@@ -79,6 +81,8 @@ export class Login {
     password: ['', Validators.required],
   });
   protected readonly busy = signal(false);
+  /** What the passkey sign-in is waiting for right now (null when idle). */
+  protected readonly step = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly passkeys = passkeysSupported();
   protected readonly version = inject(VersionService);
@@ -110,9 +114,12 @@ export class Login {
   protected async passkey(): Promise<void> {
     this.busy.set(true);
     this.error.set(null);
+    this.step.set('Preparing the sign-in…');
     try {
       const req = await this.api.passkeyLoginOptions();
+      this.step.set('Waiting for your device: choose your passkey in the browser prompt and confirm.');
       const credential = await getAssertion(req.options);
+      this.step.set('Signing in…');
       const r = await this.api.passkeyLogin(req.requestId, credential);
       await this.done(r.user);
     } catch (e) {
@@ -122,6 +129,7 @@ export class Login {
         );
       }
     } finally {
+      this.step.set(null);
       this.busy.set(false);
     }
   }

@@ -15,6 +15,7 @@ import { Notify } from '../../core/notify.service';
 import { TsPipe } from '../../core/pipes';
 import { createCredential, isCancelled, passkeysSupported } from '../../core/webauthn';
 import { CopyBox, ConfirmDialog, SecretDialog } from '../../shared/dialogs';
+import { ProgressNote } from '../../shared/progress-note';
 import { TokenDialog, TokenInput } from './token-dialog';
 
 function sameAs(a: string, b: string) {
@@ -24,7 +25,7 @@ function sameAs(a: string, b: string) {
 
 @Component({
   selector: 'app-account',
-  imports: [ReactiveFormsModule, MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule, MatTooltipModule, TsPipe, CopyBox],
+  imports: [ReactiveFormsModule, MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule, MatTooltipModule, TsPipe, CopyBox, ProgressNote],
   template: `
     <div class="page">
       <div class="page-head"><h1>My account</h1></div>
@@ -71,6 +72,7 @@ function sameAs(a: string, b: string) {
                 <input matInput formControlName="name" placeholder="Laptop, phone…" autocomplete="off" /></mat-form-field>
               <button mat-flat-button type="submit" [disabled]="pk.invalid || busy()"><mat-icon>fingerprint</mat-icon> Add passkey</button>
             </form>
+            @if (pkStep(); as step) { <app-progress-note [text]="step" /> }
           } @else {
             <p class="muted">This browser or connection does not support passkeys (HTTPS is required).</p>
           }
@@ -129,6 +131,8 @@ export class Account {
 
   protected readonly supported = passkeysSupported();
   protected readonly busy = signal(false);
+  /** What the passkey registration is waiting for right now (null when idle). */
+  protected readonly pkStep = signal<string | null>(null);
   protected readonly passkeys = signal<Passkey[]>([]);
   protected readonly tokens = signal<AccessToken[]>([]);
   protected readonly curlHint = computed(
@@ -170,9 +174,12 @@ export class Account {
   protected async addPasskey(): Promise<void> {
     if (this.pk.invalid) return;
     this.busy.set(true);
+    this.pkStep.set('Preparing the passkey…');
     try {
       const req = await this.api.passkeyCreateOptions();
+      this.pkStep.set('Waiting for your device: confirm in the browser prompt with fingerprint, face, PIN or security key.');
       const credential = await createCredential(req.options);
+      this.pkStep.set('Saving the passkey…');
       await this.api.passkeyAdd(req.requestId, this.pk.getRawValue().name.trim(), credential);
       this.pk.reset();
       this.notify.info('Passkey added');
@@ -182,6 +189,7 @@ export class Account {
       // HTTP errors were already reported by the interceptor; browser/WebAuthn errors are reported here.
       if (!isCancelled(e) && !(e instanceof HttpErrorResponse)) this.notify.error(errorMessage(e));
     } finally {
+      this.pkStep.set(null);
       this.busy.set(false);
     }
   }
