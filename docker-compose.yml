@@ -1,0 +1,50 @@
+# maillog - central mail log + health monitor (ASP.NET / .NET 10, Angular, PostgreSQL).
+# Only bind mounts relative to this file, no named volumes.
+# TLS is terminated by an external reverse proxy; the app listens on 127.0.0.1 only.
+name: maillog
+
+services:
+  maillog-db:
+    image: postgres:18-trixie
+    container_name: maillog-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: maillog
+      POSTGRES_USER: maillog
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      TZ: ${TZ:-Europe/Vienna}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maillog -d maillog"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 1g
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  maillog:
+    build:
+      context: .
+    image: maillog:latest
+    container_name: maillog
+    restart: unless-stopped
+    depends_on:
+      maillog-db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${MAILLOG_PORT:-33023}:8080"
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      MAILLOG_DB_CONNECTION: Host=maillog-db;Database=maillog;Username=maillog;Password=${POSTGRES_PASSWORD}
+      TZ: ${TZ:-Europe/Vienna}
+    tmpfs:
+      - /tmp
+    mem_limit: 512m
+    logging: *logging

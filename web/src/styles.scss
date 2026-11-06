@@ -1,0 +1,230 @@
+@use '@angular/material' as mat;
+
+html {
+  color-scheme: light dark;
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$azure-palette,
+        tertiary: mat.$blue-palette,
+        theme-type: color-scheme,
+      ),
+      typography: (
+        plain-family: (system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif),
+        brand-family: (system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif),
+      ),
+      density: -1,
+    )
+  );
+  --ml-ok: light-dark(#1b7f3a, #6bd68a);
+  --ml-warn: light-dark(#a56a00, #f2b84b);
+  --ml-fail: light-dark(#b3261e, #ff8a80);
+  --ml-info: light-dark(#0b57d0, #8ab4f8);
+  --ml-muted: var(--mat-sys-on-surface-variant);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+h1 {
+  font: var(--mat-sys-headline-small);
+  margin: 0;
+}
+
+h2 {
+  font: var(--mat-sys-title-medium);
+  margin: 0 0 8px;
+}
+
+a {
+  color: var(--mat-sys-primary);
+}
+
+.page {
+  padding: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+}
+
+.card {
+  background: var(--mat-sys-surface-container);
+  border-radius: var(--mat-sys-corner-medium);
+  padding: 16px;
+}
+
+.muted {
+  color: var(--ml-muted);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+.wrap-any {
+  overflow-wrap: anywhere;
+}
+
+.filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.filters mat-form-field {
+  min-width: 150px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  background: var(--mat-sys-surface-container);
+  border-radius: var(--mat-sys-corner-medium);
+}
+
+table.ml-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.ml-table th {
+  text-align: left;
+  font: var(--mat-sys-label-large);
+  color: var(--ml-muted);
+  padding: 10px 12px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+
+table.ml-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+  vertical-align: top;
+}
+
+table.ml-table tr:last-child td {
+  border-bottom: 0;
+}
+
+table.ml-table tr.clickable {
+  cursor: pointer;
+}
+
+table.ml-table tr.clickable:hover,
+table.ml-table tr.clickable:focus-visible {
+  background: var(--mat-sys-surface-container-high);
+  outline: none;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  font: var(--mat-sys-label-medium);
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.pill.ok,
+.pill.sent,
+.pill.info {
+  color: var(--ml-ok);
+}
+
+.pill.warn,
+.pill.warning,
+.pill.deferred {
+  color: var(--ml-warn);
+}
+
+.pill.fail,
+.pill.critical,
+.pill.bounced,
+.pill.reject {
+  color: var(--ml-fail);
+}
+
+.pill.neutral {
+  color: var(--ml-muted);
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ml-muted);
+  flex: none;
+}
+
+.dot.ok {
+  background: var(--ml-ok);
+}
+
+.dot.warn {
+  background: var(--ml-warn);
+}
+
+.dot.fail {
+  background: var(--ml-fail);
+}
+
+.empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--ml-muted);
+}
+
+.ml-snack-error {
+  --mat-snack-bar-container-color: var(--mat-sys-error-container);
+  --mat-snack-bar-supporting-text-color: var(--mat-sys-on-error-container);
+  --mat-snack-bar-button-color: var(--mat-sys-on-error-container);
+}
+
+form.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

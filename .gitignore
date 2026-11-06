@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+/data/*
+!/data/.gitkeep
+.env
+__pycache__/
+*.pyc
