@@ -125,6 +125,8 @@ With `timeline=true` (GET) or `"timeline": true` (POST) each result carries the 
 4. Treat a `not_found` as definitive only after `logsCompleteUntil` has passed the time you sent the mail.
 5. Never log or display the API key; keep it in the application's configuration, not in the repository.
 6. Use the batch endpoint for periodic jobs (one request per 100 messages).
+7. Send your own `User-Agent` header (for example `danceplus-web/1.0`). maillog sits behind Cloudflare, which rejects requests with the default
+   User-Agent of some HTTP libraries (for example Python's urllib) with `403 error code: 1010`. Set a request timeout of about 10-30 seconds.
 
 ## How it works
 

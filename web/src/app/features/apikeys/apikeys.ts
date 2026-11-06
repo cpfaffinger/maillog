@@ -33,17 +33,17 @@ import { ApiKeyDialog } from './apikey-dialog';
 
       <div class="table-wrap">
         <table class="ml-table" aria-label="API keys">
-          <thead><tr><th>Name</th><th>Key</th><th>Sender domains</th><th>Expires</th><th>Last used</th><th class="num">Requests</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <thead><tr><th>Name</th><th>Key</th><th>Sender domains</th><th>Expires</th><th>Last used</th><th><span class="sr-only">Actions</span></th></tr></thead>
           <tbody>
             @for (k of keys(); track k.id) {
               <tr>
-                <td><b>{{ k.name }}</b><div class="muted">created {{ k.createdAt | ts }} by {{ k.createdBy || '–' }}</div></td>
+                <td class="name"><b>{{ k.name }}</b><div class="muted small">created {{ k.createdAt | ts }} by {{ k.createdBy || '–' }}</div></td>
                 <td class="mono">{{ k.prefix }}…</td>
                 <td class="wrap-any">@for (d of k.domains; track d) { <span class="pill neutral dom">{{ '@' + d }}</span> }</td>
                 <td class="nowrap">{{ k.expiresAt ? (k.expiresAt | ts) : 'never' }}
                   @if (expired(k)) { <span class="pill fail">expired</span> }</td>
-                <td class="nowrap">{{ k.lastUsed | ts }}@if (k.lastIp) { <div class="muted mono">{{ k.lastIp }}</div> }</td>
-                <td class="num">{{ k.useCount }}</td>
+                <td class="nowrap">{{ k.lastUsed | ts }}
+                  <div class="muted small">{{ k.useCount }} request{{ k.useCount === 1 ? '' : 's' }}@if (k.lastIp) { · <span class="mono">{{ k.lastIp }}</span> }</div></td>
                 <td class="actions">
                   <button mat-icon-button (click)="edit(k)" matTooltip="Rename or change domains" aria-label="Edit API key"><mat-icon>edit</mat-icon></button>
                   <button mat-icon-button (click)="revoke(k)" matTooltip="Revoke" aria-label="Revoke API key"><mat-icon>delete</mat-icon></button>
@@ -61,7 +61,8 @@ import { ApiKeyDialog } from './apikey-dialog';
     .intro app-copy-box { display: block; margin: 12px 0; }
     .nowrap { white-space: nowrap; }
     .actions { white-space: nowrap; text-align: right; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .name { min-width: 15rem; }
+    .small { font-size: 0.85em; }
     .dom { margin: 0 4px 4px 0; }
   `,
 })

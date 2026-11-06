@@ -36,9 +36,9 @@ import { normalizeDomain } from '../users/user-dialog';
             <input placeholder="danceplus.at" [matChipInputFor]="grid" [matChipInputSeparatorKeyCodes]="separators"
                    matChipInputAddOnBlur (matChipInputTokenEnd)="add($event)" />
           </mat-chip-grid>
-          <mat-hint>The key only finds messages sent from these domains (envelope sender). Other messages look like unknown ones.</mat-hint>
         </mat-form-field>
-        @if (domainError()) { <p class="err" role="alert">{{ domainError() }}</p> }
+        <p class="note muted">The key only finds messages sent from these domains (envelope sender). Messages of other domains look like unknown ones.</p>
+        @if (domainError() && form.dirty) { <p class="err" role="alert">{{ domainError() }}</p> }
 
         @if (!key) {
           <mat-form-field class="full">
@@ -59,7 +59,8 @@ import { normalizeDomain } from '../users/user-dialog';
   `,
   styles: `
     .full { width: 100%; margin-top: 8px; }
-    .err { color: var(--ml-fail); margin: 0; }
+    .err { color: var(--ml-fail); margin: 0 0 8px; }
+    .note { margin: 4px 0 12px; font-size: 0.85em; }
   `,
 })
 export class ApiKeyDialog {
