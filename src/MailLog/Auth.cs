@@ -101,21 +101,61 @@ public sealed class UserStore(Db db, Settings settings, ILogger<UserStore> log)
     public static string[] NormalizeDomains(IEnumerable<string>? domains) =>
         (domains ?? []).Select(d => d.Trim().TrimStart('@').ToLowerInvariant()).Where(d => d.Length > 0).Distinct().ToArray();
 
+    /// <summary>Host-visible (bind mounted) file with the generated administrator password.</summary>
+    public string CredentialFile => Path.Combine(settings.DataDir, "initial-admin-password.txt");
+
+    private static string GeneratePassword() =>
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(18)).Replace('+', 'x').Replace('/', 'y').TrimEnd('=');
+
+    /// <summary>First start: create the "admin" user with a random password (log once + file in the data folder).</summary>
     public void EnsureDefaultAdmin()
     {
         if (db.Scalar<long>("SELECT count(*) FROM users") > 0) return;
-        var password = settings.AdminPassword;
-        var generated = false;
-        if (string.IsNullOrWhiteSpace(password))
-        {
-            password = Convert.ToBase64String(RandomNumberGenerator.GetBytes(18)).Replace('+', 'x').Replace('/', 'y').TrimEnd('=');
-            generated = true;
-        }
-        Create("admin", "Administrator", password, Roles.Admin, [], mustChange: generated);
-        if (generated)
-            log.LogWarning("No MAILLOG_ADMIN_PASSWORD set. Created user 'admin' with the one-time password: {Password} (change it after login)", password);
+        var password = GeneratePassword();
+        Create("admin", "Administrator", password, Roles.Admin, [], mustChange: true);
+        Announce(password, "Created");
+    }
+
+    /// <summary>Recovery: set a new random password for "admin" (creates the user when it is missing). Used by the reset-admin-password command.</summary>
+    public void ResetAdminPassword()
+    {
+        var password = GeneratePassword();
+        if (ByUsername("admin") is { } admin)
+            db.Exec("UPDATE users SET password_hash=@h, must_change_password=TRUE, disabled=FALSE, role='admin' WHERE id=@id",
+                new { h = Passwords.Hash(password), id = admin.Id });
         else
-            log.LogInformation("Created default user 'admin' from MAILLOG_ADMIN_PASSWORD");
+            Create("admin", "Administrator", password, Roles.Admin, [], mustChange: true);
+        Announce(password, "Reset");
+    }
+
+    private void Announce(string password, string what)
+    {
+        log.LogWarning("{What} user 'admin'. One-time password: {Password}  (also written to {File}; change it after the first login)",
+            what, password, CredentialFile);
+        try
+        {
+            Directory.CreateDirectory(settings.DataDir);
+            var path = CredentialFile;
+            var nl = Environment.NewLine;
+            File.WriteAllText(path,
+                $"maillog administrator credentials ({what.ToLowerInvariant()} {DateTime.UtcNow:u}){nl}{nl}" +
+                $"username: admin{nl}password: {password}{nl}{nl}" +
+                $"Change the password after the first login (Account -> Password). This file is deleted automatically then.{nl}");
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        catch (Exception e)
+        {
+            log.LogWarning("Could not write {File}: {Message}. The password above is only shown here.", CredentialFile, e.Message);
+        }
+    }
+
+    /// <summary>Called after a user changed the own password: the generated credentials file is obsolete then.</summary>
+    public void PasswordChanged(UserRow user)
+    {
+        if (user.Username != "admin") return;
+        try { if (File.Exists(CredentialFile)) File.Delete(CredentialFile); }
+        catch (Exception e) { log.LogWarning("Could not delete {File}: {Message}", CredentialFile, e.Message); }
     }
 
     public int AdminCount() => (int)db.Scalar<long>("SELECT count(*) FROM users WHERE role='admin' AND NOT disabled");

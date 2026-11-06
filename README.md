@@ -22,7 +22,7 @@ A web UI and an OpenAPI-documented API give admins the whole picture and give cu
 * **Log search and message trace** – Postfix, OpenDKIM, saslauthd and fail2ban lines are parsed into events (queued, delivered, deferred, bounced, rejected, auth failures, bans …). Follow one message across all hops (relay → outbound) via queue ids.
 * **Mail queue monitoring** – per server: queue size, active/deferred/hold, age of the oldest *moving* message, top sender domains, recipient domains and delay reasons, history chart.
 * **Health checks with auto-recovery** – systemd services, TCP banners, disk, queue, and a real saslauthd probe. A failed service is restarted after two failed runs (limited to 4 restarts/hour) and the recovery is reported.
-* **Alerts** – offline agents, failing checks, SASL backend down (Postfix "generic failure"), rate limits, foreign sender domains, fail2ban bans, mail volume, deferral storms, stuck queue. Channels: webhook (json/slack/discord/ntfy), signal-cli-rest-api, SMTP.
+* **Alerts** – offline agents, failing checks, SASL backend down (Postfix "generic failure"), rate limits, foreign sender domains, fail2ban bans, mail volume, deferral storms, stuck queue. Channels are configured in the UI: SMTP (your own server, with or without authentication, STARTTLS/SSL, password stored encrypted in the database), signal-cli-rest-api and webhooks (json/slack/discord/ntfy). Use an SMTP server that does not depend on the mail system you monitor.
 * **RBAC** – `admin`, `operator`, and `viewer` (a customer scoped to one or more sender domains: sees only mail from `@their-domain` on the final hop, no infrastructure data).
 * **Personal access tokens** (optionally read-only/expiring) and **passkeys**.
 * **Retention** – mail events are deleted automatically after N days (default **180**, changeable in the UI).
@@ -32,7 +32,7 @@ A web UI and an OpenAPI-documented API give admins the whole picture and give cu
 ```bash
 git clone https://github.com/cpfaffinger/maillog.git
 cd maillog
-cp .env.example .env && chmod 600 .env     # set POSTGRES_PASSWORD, MAILLOG_ADMIN_PASSWORD, MAILLOG_PUBLIC_URL
+cp .env.example .env && chmod 600 .env     # set POSTGRES_PASSWORD and MAILLOG_PUBLIC_URL
 docker compose up -d --build
 ```
 
@@ -54,7 +54,13 @@ server {
 }
 ```
 
-Sign in as `admin` with `MAILLOG_ADMIN_PASSWORD` (only used on the very first start; afterwards manage users in the UI).
+On the very first start maillog creates the user `admin` with a random password. It is shown **once** in the container log
+(`docker compose logs maillog | grep "One-time password"`) and written to `./data/app/initial-admin-password.txt` on the Docker host
+(mode 0600). Sign in, then change the password (Account → Password); the file is deleted automatically when you do.
+Credentials never live in `.env`: users, roles, passkeys and tokens are stored in the database.
+
+Lost the admin password? `docker compose exec -u app maillog dotnet /app/MailLog.dll reset-admin-password`
+sets a new random password for `admin` and writes it to the same file.
 Set `MAILLOG_PUBLIC_URL` to the public https URL – it is required for passkeys and used in install commands.
 
 ## Add a mail server
@@ -92,14 +98,14 @@ The OpenAPI document is at `/openapi/v1.json`, interactive docs at `/api/docs`. 
 
 ## Configuration
 
-All configuration is via environment variables (`.env`). See [.env.example](.env.example) for the complete list:
-database password, admin password, public URL, retention, alert channels and thresholds.
+Deployment settings come from environment variables (`.env`, see [.env.example](.env.example)): database password, public URL, initial retention and alert thresholds.
+Everything an admin edits at runtime lives in the database and is managed in the UI: users, roles, passkeys, tokens, retention and alert channels. No secrets besides the database password are stored in `.env`.
 
 ## Development
 
 ```bash
 # backend (needs the .NET 10 SDK and a PostgreSQL)
-MAILLOG_DB_CONNECTION="Host=localhost;Database=maillog;Username=maillog;Password=..." MAILLOG_ADMIN_PASSWORD=... dotnet run --project src/MailLog
+MAILLOG_DB_CONNECTION="Host=localhost;Database=maillog;Username=maillog;Password=..." MAILLOG_DATA_DIR=./data/app dotnet run --project src/MailLog   # prints the admin password once
 dotnet test tests/MailLog.Tests        # parser + auth unit tests
 python tests/e2e/e2e.py http://localhost:8080 <admin password>   # API end-to-end test (synthetic data)
 python -m unittest discover -s tests/agent                      # agent tests

@@ -18,6 +18,7 @@ builder.Services.AddSingleton<Store>();
 builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<PasskeyService>();
 builder.Services.AddSingleton<LoginThrottle>();
+builder.Services.AddSingleton<ChannelStore>();
 builder.Services.AddSingleton<Notifier>();
 builder.Services.AddSingleton<PgXmlRepository>();
 builder.Services.AddHostedService<AlertService>();
@@ -68,7 +69,16 @@ builder.Services.AddOpenApi(o => o.AddDocumentTransformer((doc, _, _) =>
 var app = builder.Build();
 
 app.Services.GetRequiredService<Db>();
-app.Services.GetRequiredService<UserStore>().EnsureDefaultAdmin();
+var userStore = app.Services.GetRequiredService<UserStore>();
+
+// `dotnet MailLog.dll reset-admin-password`: recovery for a lost administrator password (does not start the web server)
+if (args.Length > 0 && args[0] == "reset-admin-password")
+{
+    userStore.ResetAdminPassword();
+    return;
+}
+
+userStore.EnsureDefaultAdmin();
 
 app.Use(async (ctx, next) =>
 {
@@ -110,6 +120,16 @@ app.MapGet("/healthz", (Db db) =>
     db.Scalar<long>("SELECT 1");
     return Results.Text("ok");
 }).ExcludeFromDescription();
+
+app.MapGet("/api/v1/version", () =>
+{
+    var info = typeof(Program).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "dev";
+    var plus = info.IndexOf('+');
+    var version = plus >= 0 ? info[..plus] : info;
+    var commit = plus >= 0 && plus + 1 < info.Length ? info[(plus + 1)..Math.Min(info.Length, plus + 8)] : null;
+    return Results.Ok(new { name = "maillog", version, commit });
+}).WithTags("System").WithSummary("Application version (anonymous)");
 
 UserApi.Map(app);
 DataApi.Map(app);

@@ -21,7 +21,7 @@ Errors: `401` not authenticated, `403` role not allowed, `404`, `400 {"error":".
 | `operator` | everything incl. infrastructure data (overview, queue, alerts, health, agents read-only) | only own account/passkeys/tokens |
 | `viewer` | **only mail whose envelope sender domain is in the user's `domains`** (events, trace, stats). No agents, no infrastructure fields (`agentId`, `agentName`, `clientIp`, `clientHost`, `saslUser`, `raw` are always `null` for viewers) | only own account/passkeys/tokens |
 
-The default user is `admin` (password from `MAILLOG_ADMIN_PASSWORD` on first start).
+The default user is `admin`: created on the first start with a random password (logged once and written to `initial-admin-password.txt` in the data folder).
 
 ## Common shapes
 
@@ -120,3 +120,21 @@ WebAuthn Level 3 JSON representation (`PublicKeyCredential.toJSON()` /
 | `GET /settings` | → `{retentionDays, eventCount, oldestEventTs, channels:{webhook,signal,smtp}, publicUrl, passkeysAvailable}` |
 | `PUT /settings` | `{retentionDays}` (1..3650) → same as GET. Events older than `retentionDays` are deleted automatically (default 180) |
 | `POST /settings/test-notification` | → `{ok, errors:[string]}` |
+
+### Alert channels (admin)
+
+Alert delivery is configured in the database (UI: *Settings → Alert channels*), not in environment variables.
+Use an SMTP server that does not depend on the mail system you monitor.
+
+| method path | body → result |
+|---|---|
+| `GET /settings/channels` | → `{smtp:{enabled,host,port,security:"none\|starttls\|ssl",authenticate,username,passwordSet,from,fromName,to:[...]}, signal:{enabled,url,number,recipients:[...]}, webhook:{enabled,url,format:"json\|slack\|discord\|ntfy"}}` (the password is never returned) |
+| `PUT /settings/channels` | same shape; fields that are omitted/null keep their stored value. `smtp.password` sets a new password, `smtp.clearPassword:true` deletes it. Passwords are stored encrypted. → saved config, or `400 {error}` |
+| `POST /settings/channels/{smtp\|signal\|webhook}/test` | optional body with (unsaved) values of that channel, e.g. `{"host":"...","port":587}`; missing fields fall back to the stored config. Sends a real test message → `{ok, errors:[...]}` |
+
+### System
+
+| method path | role | result |
+|---|---|---|
+| `GET /version` | anonymous | `{name, version, commit}` (`commit` is the short git revision the image was built from, or `null`) |
+

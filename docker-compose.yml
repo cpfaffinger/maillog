@@ -30,6 +30,9 @@ services:
   maillog:
     build:
       context: .
+      args:
+        # shown in the UI footer; deploy with: GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build
+        SOURCE_REVISION: ${GIT_SHA:-}
     image: maillog:latest
     container_name: maillog
     restart: unless-stopped
@@ -44,6 +47,9 @@ services:
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       MAILLOG_DB_CONNECTION: Host=maillog-db;Database=maillog;Username=maillog;Password=${POSTGRES_PASSWORD}
       TZ: ${TZ:-Europe/Vienna}
+    volumes:
+      # holds initial-admin-password.txt (generated on first start, deleted once the admin changes the password)
+      - ./data/app:/data
     tmpfs:
       - /tmp
     mem_limit: 512m

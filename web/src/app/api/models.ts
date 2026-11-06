@@ -288,3 +288,64 @@ export interface TestNotificationResult {
   ok: boolean;
   errors: string[];
 }
+
+// ---- alert channel configuration (GET/PUT /settings/channels) ----
+
+export type ChannelKey = 'smtp' | 'signal' | 'webhook';
+export type SmtpSecurity = 'none' | 'starttls' | 'ssl';
+export type WebhookFormat = 'json' | 'slack' | 'discord' | 'ntfy';
+
+export interface SmtpChannel {
+  enabled: boolean;
+  host: string;
+  port: number;
+  security: SmtpSecurity;
+  authenticate: boolean;
+  username: string;
+  /** The stored password is never returned, only whether one exists. */
+  passwordSet: boolean;
+  from: string;
+  fromName: string;
+  to: string[];
+}
+
+export interface SignalChannel {
+  enabled: boolean;
+  url: string;
+  number: string;
+  recipients: string[];
+}
+
+export interface WebhookChannel {
+  enabled: boolean;
+  url: string;
+  format: WebhookFormat;
+}
+
+export interface Channels {
+  smtp: SmtpChannel;
+  signal: SignalChannel;
+  webhook: WebhookChannel;
+}
+
+export interface SmtpChannelInput extends Omit<SmtpChannel, 'passwordSet'> {
+  /** Omitted/null keeps the stored password, a non-empty value replaces it. */
+  password?: string | null;
+  /** true deletes the stored password. */
+  clearPassword?: boolean;
+}
+
+export interface ChannelsInput {
+  smtp: SmtpChannelInput;
+  signal: SignalChannel;
+  webhook: WebhookChannel;
+}
+
+/** Body of POST /settings/channels/{kind}/test: unsaved form values of one channel (all optional). */
+export type ChannelTestBody = Partial<SmtpChannelInput> | Partial<SignalChannel> | Partial<WebhookChannel>;
+
+export interface VersionInfo {
+  name: string;
+  version: string;
+  commit: string | null;
+}

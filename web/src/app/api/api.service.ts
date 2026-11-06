@@ -3,9 +3,10 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { SILENT } from '../core/http';
 import {
-  AccessToken, ActionItem, Agent, AgentConfigInput, AgentCreated, Alert, AppSettings, Enrollment,
+  AccessToken, ActionItem, Agent, AgentConfigInput, AgentCreated, Alert, AppSettings, ChannelKey, Channels,
+  ChannelsInput, ChannelTestBody, Enrollment,
   EventQuery, EventsPage, HealthHistoryItem, Overview, Passkey, QueueResult, StatsResult,
-  TestNotificationResult, TokenCreated, TraceResult, User, UserInput, WebAuthnRequest,
+  TestNotificationResult, TokenCreated, TraceResult, User, UserInput, VersionInfo, WebAuthnRequest,
 } from './models';
 
 const BASE = '/api/v1';
@@ -36,6 +37,11 @@ export class ApiService {
   }
   private del(path: string): Promise<void> {
     return firstValueFrom(this.http.delete<void>(BASE + path));
+  }
+
+  /** Anonymous; used by the login page and the sidenav footer. */
+  version() {
+    return this.get<VersionInfo>('/version', undefined, true);
   }
 
   // auth
@@ -144,6 +150,15 @@ export class ApiService {
   }
   settingsSave(retentionDays: number) {
     return this.put<AppSettings>('/settings', { retentionDays });
+  }
+  channels() {
+    return this.get<Channels>('/settings/channels');
+  }
+  channelsSave(input: ChannelsInput) {
+    return this.put<Channels>('/settings/channels', input);
+  }
+  channelTest(kind: ChannelKey, body?: ChannelTestBody) {
+    return this.post<TestNotificationResult>(`/settings/channels/${kind}/test`, body ?? {});
   }
   testNotification() {
     return this.post<TestNotificationResult>('/settings/test-notification');

@@ -12,6 +12,7 @@ import { ApiService } from '../../api/api.service';
 import { User } from '../../api/models';
 import { AuthService } from '../../core/auth.service';
 import { errorMessage } from '../../core/http';
+import { VersionService } from '../../core/version.service';
 import { getAssertion, isCancelled, passkeysSupported } from '../../core/webauthn';
 
 @Component({
@@ -22,6 +23,7 @@ import { getAssertion, isCancelled, passkeysSupported } from '../../core/webauth
   ],
   template: `
     <div class="wrap">
+      <div class="col">
       <form class="card box stack" [formGroup]="form" (ngSubmit)="submit()" aria-labelledby="login-title">
         <h1 id="login-title"><mat-icon aria-hidden="true">mark_email_read</mat-icon> maillog</h1>
         <p class="muted">Sign in to continue</p>
@@ -51,11 +53,15 @@ import { getAssertion, isCancelled, passkeysSupported } from '../../core/webauth
         }
         @if (busy()) { <mat-progress-bar mode="indeterminate" /> }
       </form>
+      @if (version.text()) { <p class="ver muted">{{ version.text() }}</p> }
+      </div>
     </div>
   `,
   styles: `
     .wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
-    .box { width: min(100%, 380px); padding: 24px; }
+    .col { width: min(100%, 380px); }
+    .box { width: 100%; padding: 24px; }
+    .ver { text-align: center; font-size: 0.8em; margin: 12px 0 0; }
     h1 { display: flex; align-items: center; gap: 8px; }
     .err { color: var(--ml-fail); margin: 0 0 8px; }
     .small { font-size: 0.85em; margin: 0; }
@@ -75,8 +81,10 @@ export class Login {
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly passkeys = passkeysSupported();
+  protected readonly version = inject(VersionService);
 
   constructor() {
+    this.version.load();
     void this.auth.ensureLoaded().then((u) => {
       if (u) void this.router.navigateByUrl(this.target(u));
     });

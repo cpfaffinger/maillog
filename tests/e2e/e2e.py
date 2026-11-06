@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """End-to-end API test for a running maillog instance (stdlib only).
 
-Usage: e2e.py BASE_URL ADMIN_PASSWORD [--wait-alerts]
+Usage: e2e.py BASE_URL ADMIN_PASSWORD [--wait-alerts]   (ADMIN_PASSWORD: from the container log / initial-admin-password.txt)
 Creates its own agent/users/tokens with a random suffix and cleans up what it can. Do NOT run against production data you care about
 (it ingests synthetic mail events with sender domain *.e2e.test).
 """
 import gzip
+import os
 import http.cookiejar
 import json
 import secrets
@@ -60,6 +61,96 @@ def _json(b):
         return b.decode(errors="replace")
 
 
+class FakeSmtp:
+    """Tiny SMTP server for the alert channel tests (plain, optional AUTH PLAIN/LOGIN, records messages)."""
+
+    def __init__(self, port):
+        import socket
+        import threading
+        self.port = port
+        self.require_auth = False
+        self.messages = []
+        self.auths = []
+        self.sock = socket.socket()
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind(("0.0.0.0", port))
+        self.sock.listen(5)
+        threading.Thread(target=self._accept, daemon=True).start()
+
+    def _accept(self):
+        import threading
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
+
+    def _serve(self, conn):
+        import base64
+        f = conn.makefile("rwb", buffering=0)
+        send = lambda t: f.write((t + "\r\n").encode())
+        authed = False
+        mail_from, rcpts = None, []
+        send("220 fake.smtp ESMTP ready")
+        try:
+            while True:
+                line = f.readline().decode(errors="replace").rstrip("\r\n")
+                if not line:
+                    return
+                up = line.upper()
+                if up.startswith(("EHLO", "HELO")):
+                    send("250-fake.smtp")
+                    send("250-AUTH PLAIN LOGIN")
+                    send("250 8BITMIME")
+                elif up.startswith("AUTH PLAIN"):
+                    arg = line[10:].strip()
+                    if not arg:
+                        send("334 ")
+                        arg = f.readline().decode().strip()
+                    parts = base64.b64decode(arg).split(b"\0")
+                    self.auths.append((parts[-2].decode(), parts[-1].decode()))
+                    authed = True
+                    send("235 2.7.0 Authentication successful")
+                elif up.startswith("AUTH LOGIN"):
+                    send("334 " + base64.b64encode(b"Username:").decode())
+                    user = base64.b64decode(f.readline().strip()).decode()
+                    send("334 " + base64.b64encode(b"Password:").decode())
+                    pw = base64.b64decode(f.readline().strip()).decode()
+                    self.auths.append((user, pw))
+                    authed = True
+                    send("235 2.7.0 Authentication successful")
+                elif up.startswith("MAIL FROM"):
+                    if self.require_auth and not authed:
+                        send("530 5.7.0 Authentication required")
+                        continue
+                    mail_from = line[10:].strip()
+                    rcpts = []
+                    send("250 OK")
+                elif up.startswith("RCPT TO"):
+                    rcpts.append(line[8:].strip())
+                    send("250 OK")
+                elif up == "DATA":
+                    send("354 go ahead")
+                    data = b""
+                    while not data.endswith(b"\r\n.\r\n"):
+                        chunk = f.readline()
+                        if not chunk:
+                            return
+                        data += chunk
+                    self.messages.append({"from": mail_from, "rcpts": rcpts, "data": data.decode(errors="replace"), "authed": authed})
+                    send("250 OK queued")
+                elif up == "QUIT":
+                    send("221 bye")
+                    return
+                elif up.startswith("RSET") or up.startswith("NOOP"):
+                    send("250 OK")
+                else:
+                    send("502 not implemented")
+        finally:
+            conn.close()
+
+
 def iso(ts):
     lt = time.localtime(ts)
     off = time.strftime("%z", lt)
@@ -68,6 +159,7 @@ def iso(ts):
 
 def main():
     anon = Session()
+    viewer2 = None
     st, body = anon.call("GET", "/healthz", raw=True)
     check("healthz", st == 200 and body == b"ok", (st, body))
 
@@ -221,6 +313,7 @@ def main():
     oname = "operator-" + SUFFIX
     admin.call("POST", "/api/v1/users", {"username": oname, "role": "operator", "password": "operator-password-1"})
     op = Session()
+    viewer2 = op
     op.call("POST", "/api/v1/auth/login", {"username": oname, "password": "operator-password-1"})
     st, _ = op.call("GET", "/api/v1/overview")
     check("operator sees overview", st == 200, st)
@@ -276,6 +369,66 @@ def main():
     st, nf = anon.call("GET", "/api/v1/nonexistent")
     check("unknown api path is JSON 404", st == 404, (st, nf))
 
+
+    # ---- version + alert channels -------------------------------------------------------------------------
+    st, ver = anon.call("GET", "/api/v1/version")
+    check("version endpoint (anonymous)", st == 200 and ver["name"] == "maillog" and ver["version"], (st, ver))
+    smtp_host = os.environ.get("E2E_SMTP_HOST")
+    fake = None
+    if smtp_host:
+        fake = FakeSmtp(2525)
+        st, ch = admin.call("GET", "/api/v1/settings/channels")
+        check("channels default: nothing enabled, no password", st == 200 and not ch["smtp"]["enabled"] and ch["smtp"]["passwordSet"] is False and "password" not in ch["smtp"], (st, ch))
+        st, e = admin.call("PUT", "/api/v1/settings/channels", {"smtp": {"enabled": True, "host": "", "from": "a@b.test", "to": ["x@y.test"]}})
+        check("enabled smtp without host rejected", st == 400, (st, e))
+        st, e = admin.call("PUT", "/api/v1/settings/channels", {"smtp": {"to": ["not-an-email"]}})
+        check("invalid recipient rejected", st == 400, (st, e))
+        st, e = admin.call("PUT", "/api/v1/settings/channels", {"smtp": {"enabled": True, "host": smtp_host, "port": 2525, "security": "none", "authenticate": True, "username": "u", "from": "a@b.test", "to": ["x@y.test"]}})
+        check("auth on without password rejected", st == 400, (st, e))
+
+        # 1) without authentication
+        st, saved = admin.call("PUT", "/api/v1/settings/channels", {"smtp": {"enabled": True, "host": smtp_host, "port": 2525, "security": "none",
+                               "authenticate": False, "from": "maillog@alerts.test", "fromName": "maillog e2e", "to": ["ops1@example.test", "ops2@example.test"]}})
+        check("save smtp (no auth)", st == 200 and saved["smtp"]["enabled"] and saved["smtp"]["to"] == ["ops1@example.test", "ops2@example.test"], (st, saved))
+        st, r = admin.call("POST", "/api/v1/settings/channels/smtp/test")
+        check("smtp test without auth succeeds", st == 200 and r["ok"], (st, r))
+        m = fake.messages[-1] if fake.messages else None
+        check("test mail reached the server with sender, both recipients and subject", m is not None and "maillog@alerts.test" in m["from"]
+              and len(m["rcpts"]) == 2 and "[TEST]" in m["data"] and not m["authed"], m)
+
+        # 2) with authentication (server now demands it)
+        fake.require_auth = True
+        st, r = admin.call("POST", "/api/v1/settings/channels/smtp/test")
+        check("without auth a server that requires it is reported as error", st == 200 and r["ok"] is False and r["errors"], (st, r))
+        st, saved = admin.call("PUT", "/api/v1/settings/channels", {"smtp": {"authenticate": True, "username": "alerts-user", "password": "S3cret-pass word!"}})
+        check("save smtp with auth", st == 200 and saved["smtp"]["authenticate"] and saved["smtp"]["passwordSet"] is True and "password" not in saved["smtp"], (st, saved))
+        st, r = admin.call("POST", "/api/v1/settings/channels/smtp/test")
+        check("smtp test with auth succeeds", st == 200 and r["ok"], (st, r))
+        check("server received exactly the configured credentials", fake.auths and fake.auths[-1] == ("alerts-user", "S3cret-pass word!"), fake.auths)
+        check("authenticated mail delivered", fake.messages and fake.messages[-1]["authed"], fake.messages[-1:] )
+
+        # 3) unsaved form values can be tested, stored config stays untouched
+        st, r = admin.call("POST", "/api/v1/settings/channels/smtp/test", {"host": smtp_host, "port": 1})
+        check("test with unsaved wrong port fails", st == 200 and r["ok"] is False, (st, r))
+        st, again = admin.call("GET", "/api/v1/settings/channels")
+        check("unsaved test did not change the stored port", again["smtp"]["port"] == 2525 and again["smtp"]["passwordSet"], again)
+        st, r = admin.call("PUT", "/api/v1/settings/channels", {"smtp": {"username": "renamed"}})
+        st, r2 = admin.call("POST", "/api/v1/settings/channels/smtp/test")
+        check("changing the user keeps the stored password", r2["ok"] and fake.auths[-1] == ("renamed", "S3cret-pass word!"), (r2, fake.auths[-1:]))
+        st, e = admin.call("PUT", "/api/v1/settings/channels", {"smtp": {"clearPassword": True}})
+        check("clearing the password while auth is on is rejected", st == 400, (st, e))
+        st, sv = admin.call("GET", "/api/v1/settings")
+        check("settings reports smtp channel ready", st == 200 and sv["channels"]["smtp"] is True, sv)
+        st, sg = admin.call("POST", "/api/v1/settings/channels/signal/test")
+        check("signal test without config explains what is missing", st == 200 and sg["ok"] is False and sg["errors"], sg)
+        st, wh = admin.call("PUT", "/api/v1/settings/channels", {"webhook": {"enabled": True, "url": "ftp://x"}})
+        check("webhook url must be http(s)", st == 400, (st, wh))
+        before = len(fake.messages)
+        st, tn = admin.call("POST", "/api/v1/settings/test-notification")
+        check("test-notification goes to enabled channels", st == 200 and tn["ok"] and len(fake.messages) == before + 1, (tn, len(fake.messages) - before))
+    st, _ = viewer2.call("GET", "/api/v1/settings/channels") if viewer2 else (403, None)
+    check("operator cannot read channel settings", st == 403, st)
+
     # ---- settings + retention ----------------------------------------------------------------------------
     st, s = admin.call("GET", "/api/v1/settings")
     check("settings default retention is 180", st == 200 and s["retentionDays"] == 180, s)
@@ -296,6 +449,9 @@ def main():
         check("alert for SASL backend generic failure", any("SASL authentication backend" in a["title"] for a in al if a["agentName"] == name), [a["title"] for a in al])
         check("alert for foreign sender domain", any("without DKIM key" in a["title"] for a in al), [a["title"] for a in al])
         check("alert for fail2ban ban", any("banned 203.0.113.9" in a["title"] for a in al), [a["title"] for a in al])
+        if fake is not None:
+            subjects = [m["data"] for m in fake.messages]
+            check("alert mails were sent through the configured SMTP server", any("[CRITICAL]" in d and "saslauthd failing" in d for d in subjects), [d[:120] for d in subjects][-3:])
         st, act = admin.call("GET", "/api/v1/actions")
         check("recovery action stored", st == 200 and any(a["action"] == "systemctl restart postfix" for a in act), act[:2] if st == 200 else act)
         # recover the check and expect the alert to resolve

@@ -112,6 +112,7 @@ public static partial class UserApi
             if (!Passwords.Verify(dto.CurrentPassword, u.PasswordHash)) return Bad("Current password is wrong");
             if (dto.NewPassword.Length < 12) return Bad("The new password must have at least 12 characters");
             db.Exec("UPDATE users SET password_hash=@h, must_change_password=FALSE WHERE id=@id", new { h = Passwords.Hash(dto.NewPassword), id = u.Id });
+            store.PasswordChanged(u);
             return Results.NoContent();
         }).WithSummary("Change the own password");
 

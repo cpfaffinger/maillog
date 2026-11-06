@@ -15,6 +15,7 @@ import { ApiService } from '../api/api.service';
 import { Role } from '../api/models';
 import { AuthService } from '../core/auth.service';
 import { ThemeService } from '../core/theme.service';
+import { VersionService } from '../core/version.service';
 
 interface NavItem {
   path: string;
@@ -62,6 +63,7 @@ const NAV: NavItem[] = [
             <span matListItemTitle>API docs</span>
           </a>
         </mat-nav-list>
+        @if (version.text()) { <p class="ver muted">{{ version.text() }}</p> }
       </mat-sidenav>
 
       <mat-sidenav-content>
@@ -96,6 +98,7 @@ const NAV: NavItem[] = [
   `,
   styles: `
     .shell { height: 100vh; }
+    .ver { position: absolute; bottom: 8px; left: 16px; margin: 0; font-size: 0.75em; }
     .side { width: 240px; }
     .brand { display: flex; align-items: center; gap: 8px; padding: 20px 16px 8px;
              font: var(--mat-sys-title-large); }
@@ -109,8 +112,13 @@ const NAV: NavItem[] = [
 export class Shell {
   protected readonly auth = inject(AuthService);
   protected readonly theme = inject(ThemeService);
+  protected readonly version = inject(VersionService);
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
+
+  constructor() {
+    this.version.load();
+  }
 
   protected readonly narrow = toSignal(
     inject(BreakpointObserver).observe('(max-width: 959.98px)').pipe(map((r) => r.matches)),

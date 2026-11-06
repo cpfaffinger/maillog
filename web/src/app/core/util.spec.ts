@@ -1,4 +1,4 @@
-import { fmtAgo, fmtDuration } from './util';
+import { fmtAgo, fmtDuration, formatVersion } from './util';
 import { b64urlToBuf, bufToB64url } from './webauthn';
 
 describe('fmtDuration', () => {
@@ -30,5 +30,15 @@ describe('base64url', () => {
     const text = bufToB64url(bytes.buffer);
     expect(text).not.toMatch(/[+/=]/);
     expect(Array.from(new Uint8Array(b64urlToBuf(text)))).toEqual(Array.from(bytes));
+  });
+});
+
+describe('formatVersion', () => {
+  it('appends the commit when known', () => {
+    expect(formatVersion({ name: 'maillog', version: '1.0.0', commit: 'a1b2c3d' })).toBe('maillog v1.0.0 (a1b2c3d)');
+  });
+
+  it('leaves the commit part out when null', () => {
+    expect(formatVersion({ name: 'maillog', version: '1.0.0', commit: null })).toBe('maillog v1.0.0');
   });
 });

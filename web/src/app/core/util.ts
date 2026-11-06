@@ -60,3 +60,8 @@ export const ALL_KINDS = [
 ];
 
 export const VIEWER_KINDS = ['queued', 'delivery', 'accepted', 'reject', 'dkim_signed'];
+
+/** "maillog v1.0.0 (a1b2c3d)"; the commit part is left out when unknown. */
+export function formatVersion(v: { name: string; version: string; commit: string | null }): string {
+  return `${v.name} v${v.version}` + (v.commit ? ` (${v.commit})` : '');
+}

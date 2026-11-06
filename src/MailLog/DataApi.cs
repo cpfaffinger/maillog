@@ -8,6 +8,16 @@ public sealed record AgentCreateDto(string Name, string Role);
 public sealed record AgentConfigDto(int? IntervalS, JsonElement Checks, JsonElement Logs);
 public sealed record SettingsDto(int RetentionDays);
 
+/// <summary>Union of the per-channel test bodies (only the fields of the tested channel are used).</summary>
+public sealed record ChannelSet2(bool? Enabled, string? Host, int? Port, string? Security, bool? Authenticate, string? Username,
+    string? Password, bool? ClearPassword, string? From, string? FromName, string[]? To,
+    string? Url, string? Number, string[]? Recipients, string? Format)
+{
+    public SmtpInput ToSmtp() => new(Enabled, Host, Port, Security, Authenticate, Username, Password, ClearPassword, From, FromName, To);
+    public SignalInput ToSignal() => new(Enabled, Url, Number, Recipients);
+    public WebhookInput ToWebhook() => new(Enabled, Url, Format);
+}
+
 /// <summary>Mail data, infrastructure overview, agents and settings (user API).</summary>
 public static partial class DataApi
 {
@@ -138,7 +148,35 @@ public static partial class DataApi
         {
             var errors = await n.SendAsync("Test notification", "This is a test from maillog.", "info", "info", ct);
             return Results.Ok(new { ok = errors.Count == 0, errors });
-        }).WithTags("Settings").WithSummary("Send a test notification to all configured channels");
+        }).WithTags("Settings").WithSummary("Send a test notification to all enabled channels");
+
+        admin.MapGet("/settings/channels", (ChannelStore channels) => Results.Ok(ChannelStore.View(channels.Get())))
+            .WithTags("Settings").WithSummary("Alert channel configuration (SMTP, Signal, webhook); passwords are never returned");
+
+        admin.MapPut("/settings/channels", (ChannelsInput input, ChannelStore channels) =>
+        {
+            var merged = channels.Merge(channels.Get(), input);
+            var error = channels.Validate(merged);
+            if (error is not null) return Bad(error);
+            channels.Save(merged);
+            return Results.Ok(ChannelStore.View(merged));
+        }).WithTags("Settings").WithSummary("Save the alert channel configuration");
+
+        admin.MapPost("/settings/channels/{channel}/test", async (string channel, HttpContext c, ChannelStore channels, Notifier n, CancellationToken ct) =>
+        {
+            if (channel is not ("smtp" or "signal" or "webhook")) return Results.NotFound();
+            var input = c.Request.ContentLength is > 0
+                ? await c.Request.ReadFromJsonAsync<ChannelSet2>(ct) : null;
+            var current = channels.Get();
+            var set = input is null ? current : channels.Merge(current, channel switch
+            {
+                "smtp" => new ChannelsInput(input.ToSmtp(), null, null),
+                "signal" => new ChannelsInput(null, input.ToSignal(), null),
+                _ => new ChannelsInput(null, null, input.ToWebhook()),
+            });
+            var errors = await n.TestAsync(channel, set, ct);
+            return Results.Ok(new { ok = errors.Count == 0, errors });
+        }).WithTags("Settings").WithSummary("Send a test message through one channel (optionally with unsaved form values)");
     }
 
     public static string InstallCommand(string server, string token) =>
@@ -153,7 +191,7 @@ public static partial class DataApi
             retentionDays = RetentionService.RetentionDays(db),
             eventCount = estimate,
             oldestEventTs = db.Scalar<long?>("SELECT min(ts) FROM events"),
-            channels = new { webhook = n.WebhookConfigured, signal = n.SignalConfigured, smtp = n.SmtpConfigured },
+            channels = n.Status(),
             publicUrl = s.PublicUrl,
             passkeysAvailable = passkeys && s.PublicUrl is not null,
         };
