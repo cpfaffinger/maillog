@@ -1,6 +1,5 @@
-import { MailEvent, StatRow } from '../api/models';
+import { MailEvent } from '../api/models';
 import { validateChecks, validateLogs } from './agents/agent-dialogs';
-import { toBars } from './stats/stats';
 import { groupHops } from './trace/trace';
 import { normalizeDomain } from './users/user-dialog';
 
@@ -27,25 +26,6 @@ describe('groupHops', () => {
   it('works for viewers without agent information', () => {
     const hops = groupHops([ev({ agentId: null, agentName: null, agentRole: 'outbound' })]);
     expect(hops[0].label).toBe('outbound');
-  });
-});
-
-describe('toBars', () => {
-  const rows = [
-    { agentId: 'a1', hour: 3600000, sent: 2, deferred: 1, bounced: 0 },
-    { agentId: 'a2', hour: 3600000, sent: 3, deferred: 0, bounced: 1 },
-    { agentId: 'a1', hour: 0, sent: 1, deferred: 0, bounced: 0 },
-  ] as StatRow[];
-
-  it('sums per hour in chronological order', () => {
-    expect(toBars(rows, '')).toEqual([
-      { ts: 0, values: [1, 0, 0] },
-      { ts: 3600000, values: [5, 1, 1] },
-    ]);
-  });
-
-  it('can be limited to one agent', () => {
-    expect(toBars(rows, 'a2')).toEqual([{ ts: 3600000, values: [3, 0, 1] }]);
   });
 });
 

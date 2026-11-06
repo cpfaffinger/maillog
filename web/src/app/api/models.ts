@@ -166,6 +166,7 @@ export interface QueuePoint {
   ts: number;
   total: number;
   deferred: number;
+  active?: number;
   oldestAgeS: number;
 }
 
@@ -348,4 +349,84 @@ export interface VersionInfo {
   name: string;
   version: string;
   commit: string | null;
+}
+
+// ---- statistics summary (GET /stats/summary) ----
+
+export interface SummaryTotals {
+  sent: number;
+  deferred: number;
+  bounced: number;
+  rejected: number;
+  deliveredPct: number | null;
+  avgDelayS: number | null;
+  p95DelayS: number | null;
+}
+
+export interface SummaryDay {
+  /** Local midnight of the requested timezone (epoch ms). */
+  day: number;
+  sent: number;
+  deferred: number;
+  bounced: number;
+  rejected: number;
+  avgDelayS: number | null;
+  p95DelayS: number | null;
+}
+
+export interface HourOfDay {
+  hour: number;
+  sent: number;
+}
+
+export interface DomainStat {
+  name: string;
+  sent: number;
+  deferred: number;
+  bounced: number;
+}
+
+export interface BounceReason {
+  dsn: string;
+  reason: string;
+  count: number;
+}
+
+export interface AgentStat {
+  agentId: string;
+  agentName: string;
+  role: AgentRole;
+  sent: number;
+  deferred: number;
+  bounced: number;
+  rejected: number;
+  accepted: number;
+}
+
+export interface AuthFailDay {
+  day: number;
+  authFail: number;
+  genericFailures: number;
+}
+
+export interface InfrastructureStats {
+  byAgent: AgentStat[];
+  topSaslUsers: NamedCount[];
+  topClients: NamedCount[];
+  authFailuresDaily: AuthFailDay[];
+}
+
+export interface StatsSummary {
+  days: number;
+  tz: number;
+  from: number;
+  to: number;
+  scope: { domains: string[] | null };
+  totals: SummaryTotals;
+  daily: SummaryDay[];
+  hourOfDay: HourOfDay[];
+  topSenderDomains: DomainStat[];
+  topRecipientDomains: DomainStat[];
+  bounceReasons: BounceReason[];
+  infrastructure: InfrastructureStats | null;
 }

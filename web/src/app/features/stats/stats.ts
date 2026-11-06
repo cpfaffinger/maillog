@@ -1,109 +1,166 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatSelectModule } from '@angular/material/select';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { ApiService } from '../../api/api.service';
-import { Agent, StatRow } from '../../api/models';
+import { StatsSummary } from '../../api/models';
 import { AuthService } from '../../core/auth.service';
-import { Bar, BarSeries, StackedBars } from '../../shared/charts';
+import { browserTz, fmtNum, fmtPct, fmtSeconds } from '../../shared/chart-utils';
+import { BarChart, HBarChart, LineChart } from '../../shared/charts';
+import {
+  delayLines, DOMAIN_SERIES, domainRows, HOUR_SERIES, hourBars, OUTCOME_SERIES, outcomeBars, sentBouncedLines,
+} from './stats-data';
+import { StatsTabs } from './stats-tabs';
 
-const SERIES: BarSeries[] = [
-  { name: 'Sent', color: 'var(--ml-ok)' },
-  { name: 'Deferred', color: 'var(--ml-warn)' },
-  { name: 'Bounced', color: 'var(--ml-fail)' },
-];
-
-/** Sums rows per hour (optionally for one agent) into stacked-bar input. */
-export function toBars(rows: StatRow[], agent: string): Bar[] {
-  const byHour = new Map<number, number[]>();
-  for (const r of rows) {
-    if (agent && r.agentId !== agent) continue;
-    const v = byHour.get(r.hour) ?? [0, 0, 0];
-    v[0] += r.sent;
-    v[1] += r.deferred;
-    v[2] += r.bounced;
-    byHour.set(r.hour, v);
-  }
-  return [...byHour].sort((a, b) => a[0] - b[0]).map(([ts, values]) => ({ ts, values }));
-}
+export const PERIODS = [7, 30, 90, 365];
 
 @Component({
   selector: 'app-stats',
-  imports: [MatFormFieldModule, MatSelectModule, StackedBars],
+  imports: [MatButtonToggleModule, MatProgressBarModule, LineChart, BarChart, HBarChart, StatsTabs],
   template: `
     <div class="page">
-      <div class="page-head"><h1>Statistics</h1><span class="spacer"></span>
-        @if (staff()) {
-          <mat-form-field subscriptSizing="dynamic">
-            <mat-label>Agent</mat-label>
-            <mat-select [value]="agent()" (selectionChange)="agent.set($event.value)">
-              <mat-option value="">All agents</mat-option>
-              @for (a of agents(); track a.id) { <mat-option [value]="a.id">{{ a.name }}</mat-option> }
-            </mat-select>
-          </mat-form-field>
-        }
-        <mat-form-field subscriptSizing="dynamic">
-          <mat-label>Period</mat-label>
-          <mat-select [value]="hours()" (selectionChange)="setHours($event.value)">
-            <mat-option [value]="24">24 hours</mat-option>
-            <mat-option [value]="48">48 hours</mat-option>
-            <mat-option [value]="168">7 days</mat-option>
-            <mat-option [value]="336">14 days</mat-option>
-          </mat-select>
-        </mat-form-field>
+      <div class="page-head">
+        <h1>{{ staff() ? 'Mail statistics' : 'Your mail statistics' }}</h1>
+        <span class="spacer"></span>
+        <mat-button-toggle-group [value]="days()" (change)="setDays($event.value)" aria-label="Period" hideSingleSelectionIndicator>
+          @for (p of periods; track p) { <mat-button-toggle [value]="p">{{ p }} days</mat-button-toggle> }
+        </mat-button-toggle-group>
       </div>
+      @if (staff()) { <app-stats-tabs /> }
 
-      <dl class="totals">
-        <div><dt>Sent</dt><dd class="ok">{{ totals().sent }}</dd></div>
-        <div><dt>Deferred</dt><dd class="warn">{{ totals().deferred }}</dd></div>
-        <div><dt>Bounced</dt><dd class="fail">{{ totals().bounced }}</dd></div>
-      </dl>
+      @if (data(); as d) {
+        @if (d.scope.domains; as doms) {
+          <div class="scope" aria-label="Your sender domains">
+            <span class="muted">Mail sent from</span>
+            @for (dom of doms; track dom) { <span class="pill neutral">{{ '@' + dom }}</span> }
+          </div>
+        }
+        @if (loading()) { <mat-progress-bar mode="indeterminate" aria-label="Loading" /> }
 
-      <section class="card" aria-label="Hourly deliveries">
-        <h2>Deliveries per hour</h2>
-        <app-stacked-bars [bars]="bars()" [series]="series" [height]="260" label="Deliveries per hour" />
-      </section>
+        <dl class="kpis" aria-label="Key figures">
+          <div class="kpi"><dt>Sent</dt><dd>{{ fmt(d.totals.sent) }}</dd></div>
+          <div class="kpi"><dt>Delivered</dt><dd [class.ok]="(d.totals.deliveredPct ?? 0) >= 98">{{ pct(d.totals.deliveredPct) }}</dd></div>
+          <div class="kpi"><dt>Bounced</dt><dd [class.fail]="d.totals.bounced > 0">{{ fmt(d.totals.bounced) }}</dd></div>
+          <div class="kpi"><dt>Deferrals</dt><dd [class.warn]="d.totals.deferred > 0">{{ fmt(d.totals.deferred) }}</dd></div>
+          <div class="kpi"><dt>Avg delivery time</dt><dd>{{ secs(d.totals.avgDelayS) }}</dd><dd class="sub">95th pct {{ secs(d.totals.p95DelayS) }}</dd></div>
+        </dl>
+        <p class="muted caption">
+          <b>Sent</b> counts deliveries to the final recipient server. <b>Deferrals</b> are delivery attempts that were postponed;
+          one message can be deferred several times.
+        </p>
+
+        <div class="charts">
+          <section class="card wide" aria-labelledby="c1">
+            <h2 id="c1">Mails sent per day</h2>
+            <app-line-chart [series]="sentLines()" xKind="day" [tz]="d.tz" xHeader="Day" label="Mails sent and bounced per day"
+                            emptyText="No mail was sent in this period." />
+          </section>
+          <section class="card wide" aria-labelledby="c2">
+            <h2 id="c2">Daily outcome</h2>
+            <app-bar-chart [bars]="outcome()" [series]="outcomeSeries" xHeader="Day" label="Sent, deferred, bounced and rejected per day"
+                           emptyText="No delivery activity in this period." />
+          </section>
+          <section class="card" aria-labelledby="c3">
+            <h2 id="c3">Top sender domains</h2>
+            <app-hbar-chart [rows]="senderRows()" [series]="domainSeries" label="Top sender domains" emptyText="No data in this period." />
+          </section>
+          <section class="card" aria-labelledby="c4">
+            <h2 id="c4">Top recipient domains</h2>
+            <app-hbar-chart [rows]="recipientRows()" [series]="domainSeries" label="Top recipient domains" emptyText="No data in this period." />
+          </section>
+          <section class="card" aria-labelledby="c5">
+            <h2 id="c5">Sent by hour of day</h2>
+            <app-bar-chart [bars]="hours()" [series]="hourSeries" [height]="220" xHeader="Hour" label="Mails sent by hour of day"
+                           emptyText="No mail was sent in this period." />
+          </section>
+          <section class="card" aria-labelledby="c6">
+            <h2 id="c6">Delivery time per day</h2>
+            <app-line-chart [series]="delay()" xKind="day" [tz]="d.tz" [yFormat]="secs" [yIntegers]="false" [height]="220" xHeader="Day"
+                            label="Average and 95th percentile delivery time per day" emptyText="No delivery time data in this period." />
+          </section>
+          <section class="card wide" aria-labelledby="c7">
+            <h2 id="c7">Top bounce reasons</h2>
+            @if (d.bounceReasons.length > 0) {
+              <div class="table-wrap flat">
+                <table class="ml-table" aria-label="Top bounce reasons">
+                  <thead><tr><th>DSN</th><th>Reason</th><th class="num">Count</th></tr></thead>
+                  <tbody>
+                    @for (r of d.bounceReasons; track r.dsn + r.reason) {
+                      <tr><td class="mono">{{ r.dsn }}</td><td class="wrap-any">{{ r.reason }}</td><td class="num">{{ fmt(r.count) }}</td></tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <div class="empty">No bounces in this period.</div>
+            }
+          </section>
+        </div>
+      } @else {
+        <div class="kpis"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+        <div class="charts"><div class="skeleton tall wide"></div><div class="skeleton tall wide"></div><div class="skeleton tall"></div><div class="skeleton tall"></div></div>
+      }
     </div>
   `,
   styles: `
-    .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 0 16px; }
-    .totals div { background: var(--mat-sys-surface-container); border-radius: 12px; padding: 12px 16px; }
+    .scope { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 12px; }
+    .kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 12px 0 4px; }
+    .kpi { background: var(--mat-sys-surface-container); border-radius: 12px; padding: 12px 16px; }
     dt { font: var(--mat-sys-label-medium); color: var(--ml-muted); }
     dd { margin: 0; font: var(--mat-sys-headline-small); }
+    dd.sub { font: var(--mat-sys-label-medium); color: var(--ml-muted); }
     dd.ok { color: var(--ml-ok); } dd.warn { color: var(--ml-warn); } dd.fail { color: var(--ml-fail); }
+    .caption { font-size: 0.85em; margin: 4px 0 16px; }
+    .charts { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+    .wide { grid-column: 1 / -1; }
+    .tall { min-height: 220px; }
+    .flat { background: transparent; }
+    .num { text-align: right; }
+    .kpis .skeleton { height: 84px; }
   `,
 })
 export class Stats {
   private readonly api = inject(ApiService);
   protected readonly staff = inject(AuthService).isOperator;
-  protected readonly series = SERIES;
-  protected readonly hours = signal(48);
-  protected readonly agent = signal('');
-  protected readonly agents = signal<Agent[]>([]);
-  private readonly rows = signal<StatRow[]>([]);
+  protected readonly periods = PERIODS;
+  protected readonly outcomeSeries = OUTCOME_SERIES;
+  protected readonly domainSeries = DOMAIN_SERIES;
+  protected readonly hourSeries = HOUR_SERIES;
 
-  protected readonly bars = computed(() => toBars(this.rows(), this.agent()));
-  protected readonly totals = computed(() =>
-    this.bars().reduce(
-      (t, b) => ({ sent: t.sent + b.values[0], deferred: t.deferred + b.values[1], bounced: t.bounced + b.values[2] }),
-      { sent: 0, deferred: 0, bounced: 0 },
-    ),
-  );
+  protected readonly days = signal(30);
+  protected readonly data = signal<StatsSummary | null>(null);
+  protected readonly loading = signal(false);
+  private requestId = 0;
+
+  protected readonly sentLines = computed(() => sentBouncedLines(this.data()?.daily ?? []));
+  protected readonly outcome = computed(() => outcomeBars(this.data()?.daily ?? [], this.data()?.tz ?? 0));
+  protected readonly delay = computed(() => delayLines(this.data()?.daily ?? []));
+  protected readonly hours = computed(() => hourBars(this.data()?.hourOfDay ?? []));
+  protected readonly senderRows = computed(() => domainRows(this.data()?.topSenderDomains ?? []));
+  protected readonly recipientRows = computed(() => domainRows(this.data()?.topRecipientDomains ?? []));
+
+  protected readonly fmt = fmtNum;
+  protected readonly pct = fmtPct;
+  protected readonly secs = fmtSeconds;
 
   constructor() {
-    if (this.staff()) void this.api.agents().then((a) => this.agents.set(a)).catch(() => undefined);
     void this.load();
   }
 
-  protected setHours(h: number): void {
-    this.hours.set(h);
+  protected setDays(d: number): void {
+    this.days.set(d);
     void this.load();
   }
 
   private async load(): Promise<void> {
+    const id = ++this.requestId;
+    this.loading.set(true);
     try {
-      this.rows.set((await this.api.stats(this.hours())).rows);
+      const result = await this.api.statsSummary(this.days(), browserTz());
+      if (id === this.requestId) this.data.set(result);
     } catch {
       /* reported by the interceptor */
+    } finally {
+      if (id === this.requestId) this.loading.set(false);
     }
   }
 }

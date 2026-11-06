@@ -22,6 +22,8 @@ interface NavItem {
   label: string;
   icon: string;
   roles: Role[];
+  /** Highlight only on an exact URL match (parent of another entry). */
+  exact?: boolean;
 }
 
 const ALL: Role[] = ['admin', 'operator', 'viewer'];
@@ -32,7 +34,8 @@ const NAV: NavItem[] = [
   { path: '/queue', label: 'Queue', icon: 'queue', roles: STAFF },
   { path: '/messages', label: 'Messages', icon: 'mail', roles: ALL },
   { path: '/trace', label: 'Trace', icon: 'timeline', roles: ALL },
-  { path: '/stats', label: 'Statistics', icon: 'bar_chart', roles: ALL },
+  { path: '/stats', label: 'Statistics', icon: 'bar_chart', roles: ALL, exact: true },
+  { path: '/stats/infrastructure', label: 'Infrastructure', icon: 'monitor_heart', roles: STAFF },
   { path: '/alerts', label: 'Alerts', icon: 'notifications', roles: STAFF },
   { path: '/agents', label: 'Agents', icon: 'dns', roles: STAFF },
   { path: '/users', label: 'Users', icon: 'group', roles: ['admin'] },
@@ -52,7 +55,7 @@ const NAV: NavItem[] = [
         <div class="brand"><mat-icon aria-hidden="true">mark_email_read</mat-icon> maillog</div>
         <mat-nav-list>
           @for (item of items(); track item.path) {
-            <a mat-list-item [routerLink]="item.path" routerLinkActive="active"
+            <a mat-list-item [routerLink]="item.path" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: !!item.exact }"
                [activated]="false" (click)="narrow() && nav.close()">
               <mat-icon matListItemIcon aria-hidden="true">{{ item.icon }}</mat-icon>
               <span matListItemTitle>{{ item.label }}</span>

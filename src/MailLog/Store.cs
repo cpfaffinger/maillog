@@ -165,7 +165,9 @@ public sealed class Store(Db db, Settings settings)
             foreach (var line in batch.Lines)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
-                var e = LogParser.Parse(line.Length > 4000 ? line[..4000] : line, source, tzOffsetMinutes, now);
+                // PostgreSQL text cannot hold NUL bytes (they appear in logs after crashes / disk trouble); one such line must not wedge the agent
+                var clean = line.Contains('\0') ? line.Replace("\0", "") : line;
+                var e = LogParser.Parse(clean.Length > 4000 ? clean[..4000] : clean, source, tzOffsetMinutes, now);
                 e = WithSender(conn, tx, agentId, e);
                 pTs.Value = e.Ts; pSource.Value = e.Source; pProgram.Value = (object?)e.Program ?? DBNull.Value;
                 pPid.Value = (object?)e.Pid ?? DBNull.Value; pQ.Value = (object?)e.QueueId ?? DBNull.Value;

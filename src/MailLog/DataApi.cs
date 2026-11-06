@@ -312,7 +312,7 @@ public static partial class DataApi
         var since = Store.Now() - hours * 3600_000L;
         var bucketMs = Math.Max(60_000L, hours * 3600_000L / 288);
         var series = db.Rows("""
-            SELECT agent_id, (ts / @bucket) * @bucket AS ts, max(queue_total) AS total, max(queue_deferred) AS deferred, max(oldest_age_s) AS oldest_age_s
+            SELECT agent_id, (ts / @bucket) * @bucket AS ts, max(queue_total) AS total, max(queue_deferred) AS deferred, max(queue_active) AS active, max(oldest_age_s) AS oldest_age_s
             FROM metrics WHERE ts >= @since GROUP BY 1, 2 ORDER BY 2
             """, new { since, bucket = bucketMs }).GroupBy(r => (string)r["agentId"]!).ToDictionary(g => g.Key, g => g.ToList());
         var current = LatestQueues(db);
@@ -324,7 +324,7 @@ public static partial class DataApi
                 id, name = a["name"], role = a["role"],
                 current = current.TryGetValue(id, out var c) ? c : null,
                 series = series.TryGetValue(id, out var s)
-                    ? s.Select(x => new { ts = x["ts"], total = x["total"], deferred = x["deferred"], oldestAgeS = x["oldestAgeS"] })
+                    ? s.Select(x => new { ts = x["ts"], total = x["total"], deferred = x["deferred"], active = x["active"], oldestAgeS = x["oldestAgeS"] })
                     : [],
             };
         });

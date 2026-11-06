@@ -5,7 +5,7 @@ import { SILENT } from '../core/http';
 import {
   AccessToken, ActionItem, Agent, AgentConfigInput, AgentCreated, Alert, AppSettings, ChannelKey, Channels,
   ChannelsInput, ChannelTestBody, Enrollment,
-  EventQuery, EventsPage, HealthHistoryItem, Overview, Passkey, QueueResult, StatsResult,
+  EventQuery, EventsPage, HealthHistoryItem, Overview, Passkey, QueueResult, StatsResult, StatsSummary,
   TestNotificationResult, TokenCreated, TraceResult, User, UserInput, VersionInfo, WebAuthnRequest,
 } from './models';
 
@@ -110,6 +110,9 @@ export class ApiService {
   }
   stats(hours: number) {
     return this.get<StatsResult>('/stats', { hours });
+  }
+  statsSummary(days: number, tz: number) {
+    return this.get<StatsSummary>('/stats/summary', { days, tz });
   }
   overview() {
     return this.get<Overview>('/overview');

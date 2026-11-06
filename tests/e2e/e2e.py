@@ -217,6 +217,9 @@ def main():
     check("ingest (gzip) accepted", st == 200 and r["accepted"] == len(lines), (st, r))
     st, r2 = agent.call("POST", "/agent-api/v1/ingest", {"tzOffsetMinutes": 60, "batches": [{"source": "mail", "lines": lines}]})
     check("ingest is idempotent", st == 200 and r2["accepted"] == 0, (st, r2))
+    st, rn = agent.call("POST", "/agent-api/v1/ingest", {"tzOffsetMinutes": 60, "batches": [{"source": "mail", "lines": [
+        iso(now - 30) + " " + host + " postfix/smtpd[7]: warning: line with a NUL byte \u0000 inside", "\u0000\u0000\u0000"]}]})
+    check("ingest survives NUL bytes in log lines", st == 200 and rn["accepted"] >= 1, (st, rn))
 
     # the mailout hop (second agent, role outbound) to test trace + viewer scoping
     out_name = "e2e-out-" + SUFFIX
@@ -279,6 +282,25 @@ def main():
     st, ex = admin.call("GET", "/api/v1/events?kind=ban")
     check("fail2ban ban parsed", st == 200 and ex["items"] and ex["items"][0]["clientIp"] == "203.0.113.9", ex)
 
+
+    # ---- statistics summary (admin) ------------------------------------------------------------------------
+    st, sm = admin.call("GET", "/api/v1/stats/summary?days=7&tz=60")
+    check("summary: shape and zero-filled days", st == 200 and len(sm["daily"]) == 7 and len(sm["hourOfDay"]) == 24 and sm["scope"]["domains"] is None, (st, sm if st != 200 else sm["daily"][:1]))
+    if st == 200:
+        check("summary counts final hop only (outbound)", sm["totals"]["sent"] == 1 and sm["totals"]["deferred"] == 1, sm["totals"])
+        check("summary delivered percent and delay", sm["totals"]["deliveredPct"] == 100.0 and sm["totals"]["avgDelayS"] is not None, sm["totals"])
+        check("today's bucket has the mail", sm["daily"][-1]["sent"] == 1 and sum(d["sent"] for d in sm["daily"]) == 1, sm["daily"][-2:])
+        check("hour of day sums to sent", sum(h["sent"] for h in sm["hourOfDay"]) == 1, sm["hourOfDay"])
+        check("top sender domains", sm["topSenderDomains"] and any(t["name"] == dom and t["sent"] == 1 for t in sm["topSenderDomains"]) and any(t["name"] == other and t["deferred"] == 1 for t in sm["topSenderDomains"]), sm["topSenderDomains"])
+        check("top recipient domains", any(t["name"] == "gmail.com" and t["sent"] == 1 for t in sm["topRecipientDomains"]), sm["topRecipientDomains"])
+        inf = sm["infrastructure"]
+        check("admin gets infrastructure stats", inf is not None and {a["agentName"] for a in inf["byAgent"]} >= {name, out_name}, inf)
+        check("infrastructure: top SASL accounts and clients", inf and any(u["name"] == "smtp_relay_e2e" for u in inf["topSaslUsers"]) and any(u["name"] == "10.1.1.1" for u in inf["topClients"]), inf and (inf["topSaslUsers"], inf["topClients"]))
+        check("infrastructure: auth failures with generic split", inf and inf["authFailuresDaily"][-1]["authFail"] >= 1 and inf["authFailuresDaily"][-1]["genericFailures"] >= 1, inf and inf["authFailuresDaily"][-1:])
+    st, sm1 = admin.call("GET", "/api/v1/stats/summary?days=0")
+    st2, sm2 = admin.call("GET", "/api/v1/stats/summary?days=1000")
+    check("summary clamps days to 1..365", st == 200 and len(sm1["daily"]) == 1 and st2 == 200 and len(sm2["daily"]) == 365, (len(sm1["daily"]) if st == 200 else st, len(sm2["daily"]) if st2 == 200 else st2))
+
     # ---- RBAC: viewer scoped to a sender domain ------------------------------------------------------------
     vname = "viewer-" + SUFFIX
     st, _ = admin.call("POST", "/api/v1/users", {"username": vname, "role": "viewer", "domains": [], "password": "viewer-password-123"})
@@ -303,6 +325,12 @@ def main():
     check("viewer cannot trace another domain's mail", st == 200 and vtr2["events"] == [], vtr2)
     st, vs = viewer.call("GET", "/api/v1/stats?hours=2")
     check("viewer stats aggregated, no agent ids", st == 200 and vs["rows"] and all(r["agentId"] is None for r in vs["rows"]) and sum(r["sent"] for r in vs["rows"]) == 1, vs)
+    st, vsum = viewer.call("GET", "/api/v1/stats/summary?days=7&tz=60")
+    check("viewer summary is scoped to the own domain", st == 200 and vsum["scope"]["domains"] == [dom] and vsum["infrastructure"] is None, (st, vsum if st != 200 else vsum["scope"]))
+    if st == 200:
+        check("viewer totals contain only own mail", vsum["totals"]["sent"] == 1 and vsum["totals"]["deferred"] == 0, vsum["totals"])
+        check("viewer top lists show only own domain", [t["name"] for t in vsum["topSenderDomains"]] == [dom] and [t["name"] for t in vsum["topRecipientDomains"]] == ["gmail.com"], (vsum["topSenderDomains"], vsum["topRecipientDomains"]))
+        check("viewer summary leaks no other domain or infrastructure", other not in json.dumps(vsum) and "smtp_relay" not in json.dumps(vsum) and "10.1.1" not in json.dumps(vsum), None)
     for path in ("/api/v1/overview", "/api/v1/queue", "/api/v1/alerts", "/api/v1/agents", "/api/v1/users", "/api/v1/settings", "/api/v1/health/history"):
         st, _ = viewer.call("GET", path)
         check("viewer forbidden: " + path, st == 403, st)
@@ -319,6 +347,8 @@ def main():
     check("operator sees overview", st == 200, st)
     st, oev = op.call("GET", "/api/v1/events?q=" + q1)
     check("operator sees infrastructure fields", st == 200 and any(i["clientIp"] for i in oev["items"]), st)
+    st, osum = op.call("GET", "/api/v1/stats/summary?days=7&tz=60")
+    check("operator summary includes infrastructure", st == 200 and osum["infrastructure"] is not None and osum["scope"]["domains"] is None, st)
     st, _ = op.call("POST", "/api/v1/agents", {"name": "evil2", "role": "relay"})
     check("operator cannot create agents", st == 403, st)
     st, _ = op.call("GET", "/api/v1/users")

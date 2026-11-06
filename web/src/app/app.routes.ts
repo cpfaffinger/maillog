@@ -44,6 +44,12 @@ export const routes: Routes = [
         loadComponent: () => import('./features/stats/stats').then((m) => m.Stats),
       },
       {
+        path: 'stats/infrastructure',
+        canActivate: [staff],
+        title: 'Infrastructure statistics · maillog',
+        loadComponent: () => import('./features/stats/infrastructure').then((m) => m.Infrastructure),
+      },
+      {
         path: 'alerts',
         canActivate: [staff],
         title: 'Alerts · maillog',

@@ -138,3 +138,24 @@ Use an SMTP server that does not depend on the mail system you monitor.
 |---|---|---|
 | `GET /version` | anonymous | `{name, version, commit}` (`commit` is the short git revision the image was built from, or `null`) |
 
+
+### Statistics summary
+
+`GET /stats/summary?days=30&tz=60` (all roles, RBAC-scoped, cached for 30 s). `days` 1..365, `tz` = UTC offset of the client in minutes (day and hour buckets are local).
+"sent" counts deliveries on the final hop (agents with role `outbound`, or all agents when none exists); "deferred" counts postponed delivery attempts.
+
+```jsonc
+{ "days":30, "tz":60, "from":.., "to":..,
+  "scope": { "domains": ["customer-a.example"] | null },            // non-null for viewers
+  "totals": { "sent":0, "deferred":0, "bounced":0, "rejected":0, "deliveredPct":98.2|null, "avgDelayS":1.2|null, "p95DelayS":3.4|null },
+  "daily": [ { "day":.., "sent":0, "deferred":0, "bounced":0, "rejected":0, "avgDelayS":1.2|null, "p95DelayS":3.4|null } ],   // zero-filled, oldest first
+  "hourOfDay": [ { "hour":0, "sent":0 } ],                           // 24 entries
+  "topSenderDomains": [ { "name":"customer-a.example", "sent":0, "deferred":0, "bounced":0 } ],
+  "topRecipientDomains": [ { "name":"gmail.com", "sent":0, "deferred":0, "bounced":0 } ],
+  "bounceReasons": [ { "dsn":"5.1.1", "reason":"User unknown", "count":0 } ],
+  "infrastructure": null | { "byAgent":[{"agentId","agentName","role","sent","deferred","bounced","rejected","accepted"}],
+                             "topSaslUsers":[{"name","count"}], "topClients":[{"name","count"}],
+                             "authFailuresDaily":[{"day","authFail","genericFailures"}] } }   // null for viewers
+```
+
+`GET /queue` series points additionally carry `active`.

@@ -21,6 +21,10 @@ html {
   --ml-fail: light-dark(#b3261e, #ff8a80);
   --ml-info: light-dark(#0b57d0, #8ab4f8);
   --ml-muted: var(--mat-sys-on-surface-variant);
+  --ml-c4: light-dark(#7b3fa0, #d0a3f0);
+  --ml-c5: light-dark(#00838f, #6fd6e0);
+  --ml-c6: light-dark(#8d6e00, #e6cf6a);
+  --ml-c7: light-dark(#5d4037, #c4a69b);
 }
 
 html,
@@ -227,4 +231,212 @@ form.stack {
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* ---- charts (see shared/charts.ts) ---- */
+.chart-wrap {
+  position: relative;
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  touch-action: pan-y;
+  border-radius: 8px;
+}
+
+.chart-svg:focus-visible {
+  outline: 2px solid var(--mat-sys-primary);
+  outline-offset: 2px;
+}
+
+.chart-svg text {
+  font-size: 11px;
+  fill: var(--ml-muted);
+}
+
+.chart-svg .grid {
+  stroke: var(--mat-sys-outline-variant);
+  stroke-width: 1;
+}
+
+.chart-svg .cross {
+  stroke: var(--ml-muted);
+  stroke-dasharray: 3 3;
+}
+
+.chart-svg .band {
+  fill: var(--mat-sys-on-surface);
+  opacity: 0.07;
+}
+
+.chart-svg .dotring {
+  stroke: var(--mat-sys-surface);
+  stroke-width: 2;
+}
+
+.chart-tip {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-12px);
+  z-index: 2;
+  pointer-events: none;
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font: var(--mat-sys-label-medium);
+  background: var(--mat-sys-inverse-surface);
+  color: var(--mat-sys-inverse-on-surface);
+  box-shadow: var(--mat-sys-level2);
+  white-space: nowrap;
+}
+
+.chart-tip.flip {
+  transform: translateX(calc(-100% + 12px));
+}
+
+.chart-tip i,
+.chart-chip i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+}
+
+.chart-tip i.dash,
+.chart-chip i.dash {
+  height: 3px;
+  width: 14px;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 6px 10px;
+  flex-wrap: wrap;
+  padding: 6px 0 0;
+}
+
+.chart-chip {
+  display: inline-flex;
+  align-items: center;
+  font: var(--mat-sys-label-medium);
+  color: var(--mat-sys-on-surface);
+  background: transparent;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 999px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.chart-chip.static {
+  cursor: default;
+  border-style: dashed;
+}
+
+.chart-chip.off {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.chart-chip:focus-visible {
+  outline: 2px solid var(--mat-sys-primary);
+}
+
+.chart-details {
+  margin-top: 8px;
+  font: var(--mat-sys-label-medium);
+  color: var(--ml-muted);
+}
+
+.chart-details summary {
+  cursor: pointer;
+}
+
+.chart-table-wrap {
+  max-height: 280px;
+  overflow: auto;
+  margin-top: 6px;
+}
+
+.chart-table td,
+.chart-table th {
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.hbar {
+  display: grid;
+  gap: 6px;
+}
+
+.hrow {
+  display: grid;
+  grid-template-columns: minmax(80px, 30%) 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 3px 4px;
+  border-radius: 6px;
+}
+
+.hrow:hover,
+.hrow:focus-visible {
+  background: var(--mat-sys-surface-container-high);
+  outline: none;
+}
+
+.hrow .hl {
+  min-width: 0;
+}
+
+.hrow .htrack {
+  display: flex;
+  height: 14px;
+  background: var(--mat-sys-surface-container-highest);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.hrow .hseg {
+  height: 100%;
+}
+
+.hrow .hv {
+  font: var(--mat-sys-label-large);
+  min-width: 3ch;
+  text-align: right;
+}
+
+.hrow .hbreak {
+  display: none;
+  grid-column: 2 / 4;
+  font: var(--mat-sys-label-small);
+  color: var(--ml-muted);
+}
+
+.hrow:hover .hbreak,
+.hrow:focus-visible .hbreak {
+  display: block;
+}
+
+.skeleton {
+  border-radius: 12px;
+  min-height: 80px;
+  background: linear-gradient(90deg, var(--mat-sys-surface-container) 25%, var(--mat-sys-surface-container-high) 50%, var(--mat-sys-surface-container) 75%);
+  background-size: 200% 100%;
+  animation: ml-shimmer 1.4s linear infinite;
+}
+
+@keyframes ml-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
 }

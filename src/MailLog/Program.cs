@@ -133,6 +133,7 @@ app.MapGet("/api/v1/version", () =>
 
 UserApi.Map(app);
 DataApi.Map(app);
+StatsApi.Map(app);
 AgentApi.Map(app);
 
 app.MapOpenApi();
