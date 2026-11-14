@@ -10,6 +10,9 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddEnvironmentVariables("MAILLOG_");
+// Without an appsettings.json everything logs at Information: three agents report every few seconds, which is
+// ~10 log lines per request and pushed real errors out of the rotated container log within two days.
+builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
 var settings = Settings.From(builder.Configuration);
 
 builder.Services.AddSingleton(settings);

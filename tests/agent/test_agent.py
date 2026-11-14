@@ -619,6 +619,30 @@ class CheckTypeTests(CheckCase):
         self.assertEqual(self.runner.queue["oldestAgeS"], 5 * 86400)
         self.assertEqual(self.runner.queue["oldestActiveAgeS"], 0)
 
+    def test_queue_check_ignores_deferred_mail_that_is_being_retried(self):
+        # Postfix moves deferred mail to the active queue for every retry; arrival_time stays the original one
+        self.deps.now = NOW
+        retry = json.dumps({"queue_name": "active", "queue_id": "CCCC3333DD", "arrival_time": int(NOW) - 4 * 86400,
+                            "message_size": 10, "sender": "a@b.at",
+                            "recipients": [{"address": "x@t-online.de", "delay_reason": "host mx03.t-online.de refused to talk to me"}]})
+        self.deps.run_handler = lambda cmd: (0, retry)
+        r = self.run1({"name": "queue", "type": "queue", "maxAgeWarnS": 3600})
+        self.assertEqual(r["state"], "ok")
+        self.assertEqual(self.runner.queue["active"], 1)
+        self.assertEqual(self.runner.queue["oldestAgeS"], 4 * 86400)
+        self.assertEqual(self.runner.queue["oldestActiveAgeS"], 0)
+
+    def test_queue_check_still_warns_for_fresh_mail_next_to_retrying_mail(self):
+        self.deps.now = NOW
+        retry = json.dumps({"queue_name": "active", "queue_id": "CCCC3333DD", "arrival_time": int(NOW) - 4 * 86400,
+                            "message_size": 10, "sender": "a@b.at", "recipients": [{"address": "x@y.com", "delay_reason": "timeout"}]})
+        fresh = json.dumps({"queue_name": "active", "queue_id": "AAAA1111BB", "arrival_time": int(NOW) - 5400,
+                            "message_size": 10, "sender": "a@b.at", "recipients": [{"address": "x@z.com"}]})
+        self.deps.run_handler = lambda cmd: (0, retry + "\n" + fresh)
+        r = self.run1({"name": "queue", "type": "queue", "maxAgeWarnS": 3600})
+        self.assertEqual(r["state"], "warn")
+        self.assertEqual(self.runner.queue["oldestActiveAgeS"], 5400)
+
     def test_queue_check_warns_when_active_mail_is_old(self):
         self.deps.now = NOW
         stuck = json.dumps({"queue_name": "active", "queue_id": "AAAA1111BB", "arrival_time": int(NOW) - 5400,

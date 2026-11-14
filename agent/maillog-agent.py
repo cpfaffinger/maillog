@@ -24,7 +24,7 @@ import urllib.error
 import urllib.request
 from collections import Counter
 
-AGENT_VERSION = "1.0.0"
+AGENT_VERSION = "1.0.1"
 
 CONFIG_PATH = "/etc/maillog-agent.json"
 STATE_DIR = "/var/lib/maillog-agent"
@@ -192,16 +192,18 @@ def parse_postqueue(text, now):
             continue
         total += 1
         by_queue[str(m.get("queue_name", ""))] += 1
+        recipients = [r for r in (m.get("recipients") or []) if isinstance(r, dict)]
+        # a recipient with a delay_reason has already failed an attempt: the message is in the retry cycle
+        retrying = any(r.get("delay_reason") for r in recipients)
         at = m.get("arrival_time")
         if isinstance(at, (int, float)):
             oldest = at if oldest is None else min(oldest, at)
-            # deferred mail (e.g. full mailboxes) legitimately waits for days; only active/incoming mail should move
-            if m.get("queue_name") in ("active", "incoming"):
+            # deferred mail (e.g. full mailboxes) legitimately waits for days, and Postfix moves it back to the active
+            # queue for every retry (arrival_time stays the original one); only fresh active/incoming mail should move
+            if m.get("queue_name") in ("active", "incoming") and not retrying:
                 oldest_active = at if oldest_active is None else min(oldest_active, at)
         senders[domain_of(m.get("sender", "")) or "(null sender)"] += 1
-        for r in m.get("recipients") or []:
-            if not isinstance(r, dict):
-                continue
+        for r in recipients:
             d = domain_of(r.get("address", ""))
             if d:
                 rcpts[d] += 1
