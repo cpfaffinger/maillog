@@ -32,7 +32,7 @@ import { LineChart, LineSeries } from '../../shared/charts';
             <article class="card" [attr.aria-label]="'Queue of ' + a.name">
               <h2>{{ a.name }} <span class="pill neutral">{{ a.role }}</span></h2>
               @if (a.current; as q) {
-                <dl class="nums">
+                <dl class="tiles nums">
                   <div [class.warn]="q.total > 0"><dt>Total</dt><dd>{{ q.total }}</dd></div>
                   <div><dt>Active</dt><dd>{{ q.active }}</dd></div>
                   <div [class.warn]="q.deferred > 0"><dt>Deferred</dt><dd>{{ q.deferred }}</dd></div>
@@ -68,12 +68,10 @@ import { LineChart, LineSeries } from '../../shared/charts';
   `,
   styles: `
     .grid.wide { grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); }
-    .nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0; }
-    .nums div { background: var(--mat-sys-surface-container-high); border-radius: 8px; padding: 6px 10px; }
-    .nums .warn dd { color: var(--ml-warn); }
-    dt { font: var(--mat-sys-label-small); color: var(--ml-muted); }
-    dd { margin: 0; font: var(--mat-sys-title-medium); }
-    h3 { font: var(--mat-sys-label-large); color: var(--ml-muted); margin: 12px 0 4px; }
+    .nums { margin: 10px 0; }
+    h2 { display: flex; align-items: center; gap: 10px; font-size: 1.1rem; }
+    h3 { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ml-muted); margin: 16px 0 6px; }
+    .row b { font-variant-numeric: tabular-nums; }
     .small { font-size: 0.85em; margin: 0; }
     .tops { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; }
     .row { display: flex; justify-content: space-between; gap: 8px; }

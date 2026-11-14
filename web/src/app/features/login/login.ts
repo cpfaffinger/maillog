@@ -12,6 +12,7 @@ import { ApiService } from '../../api/api.service';
 import { User } from '../../api/models';
 import { AuthService } from '../../core/auth.service';
 import { errorMessage } from '../../core/http';
+import { ThemeService } from '../../core/theme.service';
 import { VersionService } from '../../core/version.service';
 import { getAssertion, isCancelled, passkeysSupported } from '../../core/webauthn';
 import { ProgressNote } from '../../shared/progress-note';
@@ -26,8 +27,9 @@ import { ProgressNote } from '../../shared/progress-note';
     <div class="wrap">
       <div class="col">
       <form class="card box stack" [formGroup]="form" (ngSubmit)="submit()" aria-labelledby="login-title">
-        <h1 id="login-title"><mat-icon aria-hidden="true">mark_email_read</mat-icon> maillog</h1>
-        <p class="muted">Sign in to continue</p>
+        <span class="logo" aria-hidden="true"><mat-icon>mark_email_read</mat-icon></span>
+        <h1 id="login-title">maillog</h1>
+        <p class="muted lead">Sign in to continue</p>
 
         <mat-form-field>
           <mat-label>Username</mat-label>
@@ -60,11 +62,20 @@ import { ProgressNote } from '../../shared/progress-note';
     </div>
   `,
   styles: `
-    .wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
-    .col { width: min(100%, 380px); }
-    .box { width: 100%; padding: 24px; }
-    .ver { text-align: center; font-size: 0.8em; margin: 12px 0 0; }
-    h1 { display: flex; align-items: center; gap: 8px; }
+    .wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px;
+            background:
+              radial-gradient(900px 500px at 15% -10%, color-mix(in srgb, var(--mat-sys-primary) 16%, transparent), transparent 60%),
+              radial-gradient(800px 500px at 100% 110%, color-mix(in srgb, var(--mat-sys-tertiary) 14%, transparent), transparent 60%),
+              var(--mat-sys-surface); }
+    .col { width: min(100%, 400px); }
+    .box { width: 100%; padding: 32px 28px 28px; box-shadow: var(--ml-shadow-lift); gap: 10px; }
+    .ver { text-align: center; font-size: 0.8em; margin: 14px 0 0; }
+    .logo { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; color: #fff; margin: 0 auto 4px;
+            background: linear-gradient(135deg, #2f7cf6, #7c4dff);
+            box-shadow: 0 8px 20px rgb(79 100 246 / 0.4); }
+    .logo mat-icon { font-size: 28px; width: 28px; height: 28px; }
+    h1 { text-align: center; font-size: 1.6rem; }
+    .lead { text-align: center; margin: 0 0 12px; }
     .err { color: var(--ml-fail); margin: 0 0 8px; }
     .small { font-size: 0.85em; margin: 0; }
     button { margin-top: 4px; }
@@ -86,6 +97,8 @@ export class Login {
   protected readonly error = signal<string | null>(null);
   protected readonly passkeys = passkeysSupported();
   protected readonly version = inject(VersionService);
+  // the shell applies the saved light/dark choice; the sign-in page lives outside it
+  private readonly theme = inject(ThemeService);
 
   constructor() {
     this.version.load();

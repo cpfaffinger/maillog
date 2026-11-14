@@ -15,7 +15,8 @@ type AgentStatus = 'online' | 'offline' | 'pending';
   template: `
     <div class="page">
       <div class="page-head"><h1>Overview</h1><span class="spacer"></span>
-        <span class="muted">Refreshes every 15 s</span></div>
+        <span class="live"><span class="pulse" aria-hidden="true"></span>Live · refreshes every 15 s</span>
+        <p class="sub">Health of every mail server, with the last 24 hours at a glance.</p></div>
 
       @if (data(); as d) {
         @if (d.alerts.length > 0) {
@@ -31,7 +32,7 @@ type AgentStatus = 'online' | 'offline' | 'pending';
             <a routerLink="/alerts">All alerts</a>
           </section>
         } @else {
-          <p class="allgood"><mat-icon aria-hidden="true">check_circle</mat-icon> No open alerts</p>
+          <p class="allgood"><mat-icon aria-hidden="true">check_circle</mat-icon> All systems normal<span class="muted"> · no open alerts</span></p>
         }
 
         @if (d.agents.length === 0) {
@@ -39,7 +40,7 @@ type AgentStatus = 'online' | 'offline' | 'pending';
         }
         <div class="grid">
           @for (a of d.agents; track a.id) {
-            <article class="card agent" [attr.aria-label]="'Agent ' + a.name">
+            <article class="card agent {{ dotClass(a, d) }}" [attr.aria-label]="'Agent ' + a.name">
               <header>
                 <span class="dot {{ dotClass(a, d) }}" [attr.title]="status(a, d)"></span>
                 <h2>{{ a.name }}</h2>
@@ -61,7 +62,7 @@ type AgentStatus = 'online' | 'offline' | 'pending';
                 }
               </div>
 
-              <dl class="counters" aria-label="Last 24 hours">
+              <dl class="tiles" aria-label="Last 24 hours">
                 <div><dt>Sent</dt><dd>{{ a.stats24h.sent }}</dd></div>
                 <div><dt>Deferred</dt><dd [class.warn]="a.stats24h.deferred > 0">{{ a.stats24h.deferred }}</dd></div>
                 <div><dt>Bounced</dt><dd [class.fail]="a.stats24h.bounced > 0">{{ a.stats24h.bounced }}</dd></div>
@@ -85,23 +86,31 @@ type AgentStatus = 'online' | 'offline' | 'pending';
     </div>
   `,
   styles: `
-    .alerts ul { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 6px; }
-    .alerts li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .alerts { margin-bottom: 16px; border-left: 4px solid var(--ml-fail); }
-    .alerts h2 { display: flex; align-items: center; gap: 6px; }
-    .allgood { display: flex; align-items: center; gap: 6px; color: var(--ml-ok); margin: 0 0 16px; }
-    header { display: flex; align-items: center; gap: 8px; }
-    header h2 { margin: 0; }
+    .live { display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--ml-muted); }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--ml-ok); animation: ml-pulse 2s ease-out infinite; }
+    @keyframes ml-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ml-ok) 55%, transparent); } 80%, 100% { box-shadow: 0 0 0 7px transparent; } }
+    @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+    .alerts ul { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 8px; }
+    .alerts li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .alerts { margin-bottom: 20px; border-color: color-mix(in srgb, var(--ml-fail) 40%, var(--mat-sys-outline-variant));
+              background: color-mix(in srgb, var(--ml-fail) 6%, var(--mat-sys-surface-container-low)); }
+    .alerts h2 { display: flex; align-items: center; gap: 8px; color: var(--ml-fail); }
+    .allgood { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ml-ok); margin: 0 0 20px; padding: 12px 16px;
+               border-radius: 12px; background: color-mix(in srgb, var(--ml-ok) 9%, transparent); }
+    .allgood .muted { font-weight: 400; }
+    .agent { display: flex; flex-direction: column; gap: 4px; position: relative; overflow: hidden; }
+    .agent::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--mat-sys-outline-variant); }
+    .agent.ok::before { background: var(--ml-ok); }
+    .agent.warn::before { background: var(--ml-warn); }
+    .agent.fail::before { background: var(--ml-fail); }
+    header { display: flex; align-items: center; gap: 10px; }
+    header h2 { margin: 0; font-size: 1.1rem; }
     .small { font-size: 0.85em; }
-    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 14px; }
     .mini { font-size: 14px; width: 14px; height: 14px; }
-    .counters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 8px; }
-    .counters div { background: var(--mat-sys-surface-container-high); border-radius: 8px; padding: 6px 10px; }
-    dt { font: var(--mat-sys-label-small); color: var(--ml-muted); }
-    dd { margin: 0; font: var(--mat-sys-title-medium); }
-    dd.warn { color: var(--ml-warn); }
-    dd.fail { color: var(--ml-fail); }
-    .qline { display: flex; gap: 6px; align-items: center; text-decoration: none; }
+    dl.tiles { margin-bottom: 10px; }
+    .qline { display: flex; gap: 8px; align-items: center; text-decoration: none; font-size: 0.9rem; padding-top: 4px; }
+    .qline mat-icon { font-size: 18px; width: 18px; height: 18px; }
   `,
 })
 export class Overview {

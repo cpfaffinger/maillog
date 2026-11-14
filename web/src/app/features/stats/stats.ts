@@ -103,18 +103,17 @@ export const PERIODS = [7, 30, 90, 365];
   `,
   styles: `
     .scope { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 12px; }
-    .kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 12px 0 4px; }
-    .kpi { background: var(--mat-sys-surface-container); border-radius: 12px; padding: 12px 16px; }
-    dt { font: var(--mat-sys-label-medium); color: var(--ml-muted); }
-    dd { margin: 0; font: var(--mat-sys-headline-small); }
-    dd.sub { font: var(--mat-sys-label-medium); color: var(--ml-muted); }
+    .kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin: 16px 0 4px; }
+    .kpi { background: var(--mat-sys-surface-container-low); border: 1px solid var(--mat-sys-outline-variant); border-radius: var(--ml-radius);
+           padding: 14px 18px; box-shadow: var(--ml-shadow); }
+    .kpi dd { font-size: 1.85rem; line-height: 1.2; }
+    .kpi dd.sub { font-size: 0.78rem; font-weight: 500; letter-spacing: 0; color: var(--ml-muted); margin-top: 0; }
     dd.ok { color: var(--ml-ok); } dd.warn { color: var(--ml-warn); } dd.fail { color: var(--ml-fail); }
     .caption { font-size: 0.85em; margin: 4px 0 16px; }
     .charts { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
     .wide { grid-column: 1 / -1; }
     .tall { min-height: 220px; }
-    .flat { background: transparent; }
-    .num { text-align: right; }
+        .num { text-align: right; }
     .kpis .skeleton { height: 84px; }
   `,
 })
